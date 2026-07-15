@@ -34,6 +34,10 @@ function navigate(path, { replace = false } = {}) {
   window.history[replace ? 'replaceState' : 'pushState']({}, '', path);
 }
 
+function isProviderRoute(provider) {
+  return window.location.pathname !== '/' && routeParams().get('provider') === provider;
+}
+
 function syncScopeRoute() {
   if (!state.provider || window.location.pathname === '/') return;
   if (window.location.pathname.startsWith('/results/')) {
@@ -85,8 +89,8 @@ function setOptions(select, values, emptyLabel = 'No values returned') {
   });
 }
 
-async function connect(provider, button, { oauthRetry = false, restore = false } = {}) {
-  const loginWindow = provider !== 'sample' && !oauthRetry
+async function connect(provider, button, { oauthRetry = false, restore = false, interactive = true } = {}) {
+  const loginWindow = provider !== 'sample' && !oauthRetry && interactive
     ? window.open('about:blank', `telemetry-diet-${provider}-oauth`, 'popup,width=620,height=760')
     : null;
   $$('.source-button').forEach((source) => { source.disabled = true; });
@@ -97,8 +101,7 @@ async function connect(provider, button, { oauthRetry = false, restore = false }
     const data = await api('/api/connect', { provider });
     if (data.authorizationRequired) {
       if (!loginWindow) {
-        navigate('/', { replace: true });
-        toast(`Log in with ${labels[provider]} again to restore this screen.`);
+        toast(`Log in with ${labels[provider]} to restore this screen.`);
         return false;
       }
       loginWindow.location.replace(data.authorizationUrl);
@@ -143,6 +146,13 @@ async function connect(provider, button, { oauthRetry = false, restore = false }
     button.querySelector('strong').textContent = original;
     $$('.source-button').forEach((source) => { source.disabled = false; });
   }
+}
+
+async function connectFromButton(button) {
+  const provider = button.dataset.provider;
+  const restore = isProviderRoute(provider);
+  const connected = await connect(provider, button, { restore });
+  if (connected && restore) await restoreRoute();
 }
 
 async function updateEnvironments() {
@@ -327,7 +337,7 @@ async function restoreRoute() {
     return;
   }
   if (state.provider !== provider || $('#workbench-view').hidden) {
-    const connected = await connect(provider, $(`.source-button[data-provider="${provider}"]`), { restore: true });
+    const connected = await connect(provider, $(`.source-button[data-provider="${provider}"]`), { restore: true, interactive: false });
     if (!connected) return;
   }
   if (pathname === '/workbench') {
@@ -352,12 +362,15 @@ async function restoreRoute() {
   }
 }
 
-$$('.source-button').forEach((button) => button.addEventListener('click', () => connect(button.dataset.provider, button)));
-window.addEventListener('message', (event) => {
+$$('.source-button').forEach((button) => button.addEventListener('click', () => connectFromButton(button)));
+window.addEventListener('message', async (event) => {
   if (event.origin !== window.location.origin || event.data?.type !== 'telemetry-diet-oauth') return;
   const provider = event.data.provider;
   const button = $(`.source-button[data-provider="${provider}"]`);
-  if (button) connect(provider, button, { oauthRetry: true });
+  if (!button) return;
+  const restore = isProviderRoute(provider);
+  const connected = await connect(provider, button, { oauthRetry: true, restore, interactive: false });
+  if (connected && restore) await restoreRoute();
 });
 $('#service-select').addEventListener('change', updateEnvironments);
 $('#environment-select').addEventListener('change', syncScopeRoute);
