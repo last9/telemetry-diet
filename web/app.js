@@ -4,6 +4,7 @@ const state = {
   analysisId: null,
   findings: [],
   selected: new Set(),
+  filter: 'all',
   artifacts: null,
   output: 'otel',
   signalArtifacts: null,
@@ -318,7 +319,9 @@ function changeImpact(finding) {
 function evidenceLabel(finding) {
   if (finding.category === 'cardinality') return `Field values · redacted — ${formatNumber(finding.affectedCount)} records`;
   if (finding.category === 'drift') return `Conflicting fields — ${formatNumber(finding.affectedCount)} affected`;
-  return `Matched log lines · redacted — ${finding.examplesRedacted.length} of ${formatNumber(finding.affectedCount)}`;
+  return finding.examplesRedacted.length
+    ? `Matched log lines · redacted — ${finding.examplesRedacted.length} of ${formatNumber(finding.affectedCount)}`
+    : `No sample available · matched by field name in ${formatNumber(finding.affectedCount)} records`;
 }
 
 // One proposed-change row: verb · title · impact · include/skip, with a
@@ -424,9 +427,33 @@ function renderChange(finding) {
   return article;
 }
 
+const filterLabels = { all: 'All', noise: 'Volume', risk: 'Privacy', cardinality: 'Cardinality', drift: 'Naming' };
+
+// Category chips summarise the mix and filter the list. Counts come from the
+// findings; chips for absent categories are hidden.
+function applyChangeFilter() {
+  const counts = {};
+  state.findings.forEach((finding) => { counts[finding.category] = (counts[finding.category] || 0) + 1; });
+  $$('#change-filters .chip').forEach((chip) => {
+    const key = chip.dataset.filter;
+    const count = key === 'all' ? state.findings.length : (counts[key] || 0);
+    chip.hidden = key !== 'all' && count === 0;
+    chip.classList.toggle('active', state.filter === key);
+    chip.replaceChildren(document.createTextNode(`${filterLabels[key] || key} `));
+    const n = document.createElement('span');
+    n.className = 'n';
+    n.textContent = String(count);
+    chip.append(n);
+  });
+  $$('#findings-list .change').forEach((row) => {
+    row.hidden = state.filter !== 'all' && row.dataset.category !== state.filter;
+  });
+}
+
 function renderChanges() {
   const list = $('#findings-list');
   list.replaceChildren(...state.findings.map(renderChange));
+  applyChangeFilter();
 }
 
 // Toggle a change in place (preserves any expanded rows) and re-derive the
@@ -468,6 +495,19 @@ function renderSavings() {
   const notes = [`Directional. ${bits.join(' · ')}. Nothing is applied.`];
   if (preview.caveat) notes.push(preview.caveat);
   $('#preview-caveat').textContent = notes.join(' ');
+  // The volume % only reflects dropped events; surface the other effects so the
+  // savings card responds to every toggle (redact/un-index/rename/sample).
+  const effects = { sample: 0, redact: 0, 'remove-label': 0, normalize: 0 };
+  state.findings.forEach((finding) => {
+    if (state.selected.has(finding.id) && effects[finding.action] !== undefined) effects[finding.action] += 1;
+  });
+  const effectText = [
+    effects.sample && `${effects.sample} sampled`,
+    effects.redact && `${effects.redact} sensitive redacted`,
+    effects['remove-label'] && `${effects['remove-label']} un-indexed`,
+    effects.normalize && `${effects.normalize} renamed`,
+  ].filter(Boolean);
+  $('#sv-effects').textContent = effectText.length ? `Also: ${effectText.join(' · ')}.` : '';
   renderConfigBreakdown();
 }
 
@@ -516,6 +556,7 @@ function renderAnalysis(data) {
   state.findings = data.findings;
   state.artifacts = data.artifacts;
   state.selected = new Set(data.artifacts.selectedIds); // smart defaults come from the server
+  state.filter = 'all';
   const { summary } = data;
   $('#results-title').textContent = summary.service || 'Selected service';
   $('#results-scope').textContent = `${summary.environment || 'all environments'} · ${new Date(summary.timeWindow.start).toLocaleString()} – ${new Date(summary.timeWindow.end).toLocaleString()}`;
@@ -863,6 +904,10 @@ window.addEventListener('popstate', restoreRoute);
 $$('.fmt button').forEach((button) => button.addEventListener('click', () => {
   state.output = button.dataset.output;
   renderOutput();
+}));
+$$('#change-filters .chip').forEach((chip) => chip.addEventListener('click', () => {
+  state.filter = chip.dataset.filter;
+  applyChangeFilter();
 }));
 // View draft opens the full draft in a modal — a 300px config column is too
 // cramped to read YAML/JSON. <dialog> gives us backdrop + Esc for free.

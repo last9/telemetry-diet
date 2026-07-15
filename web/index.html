@@ -108,6 +108,13 @@
                 <h2 id="changes-title">Proposed changes</h2>
                 <span id="finding-count">0 · 0 in config</span>
               </div>
+              <div class="change-filters" id="change-filters" role="group" aria-label="Filter proposed changes by type">
+                <button type="button" class="chip active" data-filter="all">All</button>
+                <button type="button" class="chip" data-filter="noise">Volume</button>
+                <button type="button" class="chip" data-filter="risk">Privacy</button>
+                <button type="button" class="chip" data-filter="cardinality">Cardinality</button>
+                <button type="button" class="chip" data-filter="drift">Naming</button>
+              </div>
               <div id="findings-list" class="changes"></div>
             </section>
 
@@ -120,6 +127,7 @@
                   <div><b id="savings-data">—</b><span>trimmed / day</span></div>
                   <div><b id="savings-cost">—</b><span>saved / month</span></div>
                 </div>
+                <p class="sv-effects" id="sv-effects"></p>
                 <div class="sv-baseline">
                   <label>Ingest baseline <input id="ingest-gb" type="number" min="0" step="1" inputmode="decimal"> GB/day</label>
                   <label>Cost <input id="cost-gb" type="number" min="0" step="0.05" inputmode="decimal"> $/GB</label>
