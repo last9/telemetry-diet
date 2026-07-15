@@ -72,6 +72,7 @@ async function createHarness() {
     URL,
     URLSearchParams,
     Intl,
+    AbortController,
     console,
     document: {
       title: '',

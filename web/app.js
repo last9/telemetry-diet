@@ -34,6 +34,7 @@ let routeGeneration = 0;
 let generationTimer;
 let regenToken = 0;
 let changeSeq = 0; // source of DOM-safe ids for change detail panels
+let analysisAbort = null; // AbortController for the in-flight /api/analyze
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -85,6 +86,7 @@ function isProviderRoute(provider) {
 
 function syncScopeRoute() {
   if (!state.provider || window.location.pathname === '/') return;
+  if (analysisInFlight) cancelPendingAnalysis(); // changing scope abandons the running analysis
   routeGeneration += 1;
   if (window.location.pathname.startsWith('/results/')) {
     state.analysisId = null;
@@ -101,11 +103,12 @@ function syncScopeRoute() {
   navigate(scopeRoute('/workbench'), { replace: true });
 }
 
-async function api(path, payload) {
+async function api(path, payload, { signal } = {}) {
   const response = await fetch(path, {
     method: payload ? 'POST' : 'GET',
     headers: payload ? { 'content-type': 'application/json' } : {},
     body: payload ? JSON.stringify(payload) : undefined,
+    signal,
   });
   const data = await response.json();
   if (!response.ok) throw new Error(data.error || `Request failed (${response.status})`);
@@ -189,7 +192,13 @@ function syncSignalControls() {
 function cancelPendingAnalysis() {
   analysisGeneration += 1;
   analysisInFlight = false;
+  if (analysisAbort) { analysisAbort.abort(); analysisAbort = null; } // stop the network request
   $('#analyze-button').disabled = false;
+  if (!$('#loading-state').hidden) { // reset the loader back to the ready state
+    $('#loading-state').hidden = true;
+    $('#empty-state').hidden = false;
+  }
+  syncSignalControls();
 }
 
 function cancelRegeneration() {
@@ -288,6 +297,7 @@ async function connectFromButton(button) {
 }
 
 async function updateEnvironments() {
+  if (analysisInFlight) cancelPendingAnalysis(); // changing service abandons the running analysis
   try {
     const { environments } = await api('/api/environments', { provider: state.provider, service: $('#service-select').value });
     setOptions($('#environment-select'), environments, 'All environments');
@@ -751,6 +761,8 @@ async function analyze() {
   const generation = ++analysisGeneration;
   const routeAtStart = routeGeneration;
   const button = $('#analyze-button');
+  const controller = new AbortController();
+  analysisAbort = controller;
   analysisInFlight = true;
   button.disabled = true;
   syncSignalControls();
@@ -774,14 +786,14 @@ async function analyze() {
       environment: $('#environment-select').value || undefined,
       timeWindow: timeWindow(),
       signal: requestedSignal,
-    });
+    }, { signal: controller.signal });
     if (generation !== analysisGeneration || routeAtStart !== routeGeneration || requestedSignal !== state.signal) return;
     if (requestedSignal === 'logs') renderAnalysis(data);
     else renderSignalAnalysis(data);
     routeGeneration += 1;
     navigate(scopeRoute(`/results/${data.analysisId}`));
   } catch (error) {
-    if (generation !== analysisGeneration || routeAtStart !== routeGeneration) return;
+    if (error.name === 'AbortError' || generation !== analysisGeneration || routeAtStart !== routeGeneration) return;
     $('#loading-state').hidden = true;
     $('#empty-state').hidden = false;
     toast(error.message);
@@ -789,6 +801,7 @@ async function analyze() {
     clearInterval(interval);
     if (generation === analysisGeneration) {
       analysisInFlight = false;
+      analysisAbort = null;
       button.disabled = false;
       syncSignalControls();
     }
