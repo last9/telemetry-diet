@@ -524,6 +524,7 @@ function renderAnalysis(data) {
   renderChanges();
   renderSavings();
   renderOutput();
+  $('#empty-state').hidden = true;
   $('#loading-state').hidden = true;
   $('#analysis-results').hidden = false;
   revealWhenOutsideViewport($('#analysis-results'));
