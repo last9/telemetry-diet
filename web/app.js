@@ -31,6 +31,7 @@ let analysisGeneration = 0;
 let analysisInFlight = false;
 let routeGeneration = 0;
 let generationTimer;
+let regenToken = 0;
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -721,22 +722,39 @@ async function analyze() {
   }
 }
 
+// The draft is only safe to copy/download once it matches the current
+// selection, so freeze those actions while a regeneration is in flight.
+function setDraftBusy(busy) {
+  $('#copy-output').disabled = busy || state.selected.size === 0;
+  $('#download-output').disabled = busy;
+}
+
 function regenerate() {
   cancelRegeneration();
   const analysisId = state.analysisId;
   const signal = state.signal;
   if (signal !== 'logs' || !analysisId) return;
+  const token = ++regenToken; // only the newest request may commit its result
+  setDraftBusy(true);
   generationTimer = setTimeout(async () => {
     generationTimer = undefined;
-    if (state.signal !== signal || state.analysisId !== analysisId) return;
+    if (token !== regenToken || state.signal !== signal || state.analysisId !== analysisId) return;
     const selectedIds = [...state.selected];
     try {
       const { artifacts } = await api('/api/generate', { analysisId, selectedIds });
-      if (state.signal !== signal || state.analysisId !== analysisId) return;
+      if (token !== regenToken || state.signal !== signal || state.analysisId !== analysisId) return; // a newer toggle superseded this
       state.artifacts = artifacts;
       renderSavings();
       renderOutput();
+      setDraftBusy(false);
     } catch (error) {
+      if (token !== regenToken) return;
+      // Resync the toggles to the artifacts we still hold so the UI never shows
+      // "In config" rows paired with a draft that predates them.
+      state.selected = new Set(state.artifacts ? state.artifacts.selectedIds : []);
+      renderChanges();
+      renderConfigBreakdown();
+      setDraftBusy(false);
       toast(error.message);
     }
   }, 120);
