@@ -50,12 +50,14 @@ Required capabilities:
 | --- | --- | --- |
 | Service context | `get_service_summary` | Reads service-level context. |
 | Environment discovery | `get_service_environments` | Reads selectable environments when available. |
-| Field summary | `get_log_attributes` | Reads attribute statistics before log details. |
-| Log fallback | `get_service_logs` | Requests at most 200 records when aggregates are insufficient. |
+| Field discovery | `get_log_attributes` | Reads the provider's human-readable attribute catalog. It is not treated as cardinality data. |
+| Bounded log sample | `get_service_logs` | Requests at most 200 records for local deterministic analysis. |
 | Existing policy | `get_drop_rules` | Reads current rules for report context. |
 | Discovery help | `did_you_mean` | Reads suggestions when the server exposes no service-list tool. |
 
 Set `TELEMETRY_DIET_LAST9_SERVICE` for servers whose `get_service_summary` requires a service and whose `did_you_mean` response is not a service list. `TELEMETRY_DIET_LAST9_ENVIRONMENTS` supplies a comma-separated fallback when environment discovery is unavailable.
+
+The Last9 adapter follows the provider's response contracts directly: service summaries are a map with exported fields such as `ServiceName`, environments are a JSON string array, logs use `{ count, logs }`, and drop rules can be an array or a rules wrapper. `All environments` omits the environment filter because Last9 environment filtering is exact. An empty `logs` array is a valid result for the selected scope, not a connection failure.
 
 Telemetry Diet does not look up or call `add_drop_rule`. The Last9 JSON output sets `draft: true` and `apply: false`.
 
@@ -68,7 +70,7 @@ Provider results are normalized locally into fields, message fingerprints, endpo
 3. Redacts likely email, bearer/JWT, API-key, session, and request identifiers.
 4. Discards the raw record array before returning the summary to the web app.
 
-MCP implementations vary. If an advertised response is unstructured prose rather than structured JSON, Telemetry Diet stops with an explicit normalization error instead of guessing a production policy.
+Datadog and Last9 do not share a response contract. Each adapter owns its provider-specific parsing, while shared helpers only handle redaction and the normalized summary model. If a required analysis response has an unknown shape, Telemetry Diet stops with an explicit normalization error instead of guessing a production policy.
 
 ## Hosted demo boundary
 

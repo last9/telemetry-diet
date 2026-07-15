@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { extractServices, normalizedFromPayload, toolArgs } from '../src/providers/helpers.js';
+import { normalizedFromPayload, toolArgs } from '../src/providers/helpers.js';
 
 test('vendor records are normalized without retaining raw records', () => {
   const context = {
@@ -25,12 +25,7 @@ test('tool argument mapping respects actual MCP input schemas', () => {
   });
 });
 
-test('Last9 service summaries and argument aliases are normalized', () => {
-  assert.deepEqual(extractServices({
-    checkout: { ServiceName: 'checkout-api', Env: 'production', Throughput: 42 },
-    payments: { ServiceName: 'payments-api', Env: 'production', Throughput: 17 },
-  }), ['checkout-api', 'payments-api']);
-
+test('MCP argument aliases map to provider-advertised schemas', () => {
   const tool = { inputSchema: { properties: {
     service_name: {}, env: {}, start_time_iso: {}, end_time_iso: {}, limit: {},
   } } };

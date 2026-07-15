@@ -76,17 +76,18 @@ test('Last9 adapter reads summaries, attributes, environments, and existing rule
   adapter.rulesTool = { name: 'get_drop_rules', inputSchema: { properties: { service: {} } } };
   adapter.client = { callTool: async (name, args) => {
     calls.push({ name, args });
-    if (name === 'get_service_environments') return { environments: ['production'] };
+    if (name === 'get_service_environments') return ['production'];
     if (name === 'get_service_summary') return { name: 'checkout-api' };
     if (name === 'get_log_attributes') return normalized;
     if (name === 'get_drop_rules') return { rules: [{ name: 'retain-errors', type: 'retention', description: 'Keep errors' }] };
+    if (name === 'get_service_logs') return { count: 1, logs: [{ message: 'checkout complete', severity: 'INFO', service_name: 'checkout-api' }] };
     throw new Error(`Unexpected tool: ${name}`);
   } };
   assert.deepEqual(await adapter.discoverServices(), ['checkout-api']);
-  assert.deepEqual(await adapter.getEnvironments('checkout-api'), ['production']);
+  assert.deepEqual(await adapter.getEnvironments('checkout-api'), ['*', 'production']);
   const summary = await adapter.analyze({ service: 'checkout-api', environment: 'production', timeWindow });
   assert.equal(summary.provider, 'last9');
   assert.equal(summary.existingPolicies[0].name, 'retain-errors');
   assert.ok(calls.every(({ name }) => !/add|create|update|delete/i.test(name)));
-  assert.ok(!calls.some(({ name }) => name === 'get_service_logs'));
+  assert.ok(calls.some(({ name }) => name === 'get_service_logs'));
 });

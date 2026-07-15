@@ -1,5 +1,6 @@
 import { createMcpClient } from '../mcp/client.js';
-import { extractEnvironments, extractServices, findTool, normalizedFromPayload, providerQuery, toolArgs } from './helpers.js';
+import { findTool, providerQuery, toolArgs } from './helpers.js';
+import { environmentsFromLast9, normalizeLast9Logs, policiesFromLast9, servicesFromLast9Summary } from './last9-normalize.js';
 
 export function resolveLast9McpConfig(env = process.env) {
   const url = env.TELEMETRY_DIET_LAST9_MCP_URL;
@@ -57,39 +58,33 @@ export class Last9Adapter {
     const values = { query: configured || '*', service: configured, limit: 100, lookback_minutes: 10080 };
     if (!(this.summaryTool.inputSchema?.required || []).some((key) => /service/i.test(key))) {
       const result = await this.client.callTool(this.summaryTool.name, toolArgs(this.summaryTool, values));
-      return extractServices(result);
+      return servicesFromLast9Summary(result);
     }
     return [];
   }
 
   async getEnvironments(service) {
-    if (!this.environmentsTool) return (this.env.TELEMETRY_DIET_LAST9_ENVIRONMENTS || 'production').split(',');
+    if (!this.environmentsTool) return ['*', ...(this.env.TELEMETRY_DIET_LAST9_ENVIRONMENTS || 'production').split(',')];
     const result = await this.client.callTool(this.environmentsTool.name, toolArgs(this.environmentsTool, { service, query: service }));
-    return extractEnvironments(result);
+    return ['*', ...environmentsFromLast9(result).filter((value) => value !== '*')];
   }
 
   async analyze({ service, environment, timeWindow }) {
-    const context = { provider: this.provider, service, environment, timeWindow };
+    const scopedEnvironment = environment === '*' ? undefined : environment;
+    const context = { provider: this.provider, service, environment: scopedEnvironment, timeWindow };
     const values = {
-      service, environment, query: providerQuery(service, environment),
+      service, environment: scopedEnvironment, query: providerQuery(service, scopedEnvironment),
       start: timeWindow.start, end: timeWindow.end, from: timeWindow.start, to: timeWindow.end, limit: 200,
     };
-    const [serviceSummary, attributes, rules] = await Promise.all([
+    const [, , rules] = await Promise.all([
       this.client.callTool(this.summaryTool.name, toolArgs(this.summaryTool, values)),
       this.attributesTool ? this.client.callTool(this.attributesTool.name, toolArgs(this.attributesTool, values)) : null,
       this.rulesTool ? this.client.callTool(this.rulesTool.name, toolArgs(this.rulesTool, values)) : null,
     ]);
-    const rawRules = Array.isArray(rules) ? rules : (rules?.rules || rules?.drop_rules || []);
-    const existingPolicies = rawRules.map((rule) => ({
-      provider: 'last9', name: rule.name || rule.id || 'Existing drop rule', type: rule.type || 'drop', summary: rule.summary || rule.description || JSON.stringify(rule.filters || {}),
-    }));
-    for (const aggregate of [attributes, serviceSummary]) {
-      const normalized = normalizedFromPayload(aggregate, context, { existingPolicies, limitations: ['Last9 aggregates were normalized locally; draft rules are never applied.'] });
-      if (normalized?.fields.length && (normalized.messages.length || normalized.endpoints.length)) return normalized;
-    }
+    const existingPolicies = policiesFromLast9(rules);
     const logs = await this.client.callTool(this.logsTool.name, toolArgs(this.logsTool, values));
-    const normalized = normalizedFromPayload(logs, context, { existingPolicies, limitations: ['Field ratios are based on at most 200 records returned by Last9 MCP.'] });
-    if (!normalized) throw new Error('Last9 MCP response did not contain structured log records or a normalized aggregate.');
+    const normalized = normalizeLast9Logs(logs, context, { existingPolicies, limit: 200 });
+    if (!normalized) throw new Error('Last9 MCP response did not contain a recognized log collection or normalized aggregate.');
     return normalized;
   }
 

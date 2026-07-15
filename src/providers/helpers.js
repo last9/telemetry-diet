@@ -81,17 +81,17 @@ function flatten(value, prefix = '', output = {}) {
 }
 
 function recordsFrom(value, depth = 0) {
-  if (depth > 5 || value == null) return [];
+  if (depth > 5 || value == null) return undefined;
   if (Array.isArray(value)) {
-    if (value.some((item) => item && typeof item === 'object')) return value.filter((item) => item && typeof item === 'object');
-    return [];
+    return value.filter((item) => item && typeof item === 'object');
   }
-  if (typeof value !== 'object') return [];
+  if (typeof value !== 'object') return undefined;
   for (const key of ['logs', 'events', 'records', 'items', 'results', 'hits']) {
+    if (Array.isArray(value[key])) return value[key].filter((item) => item && typeof item === 'object');
     const found = recordsFrom(value[key], depth + 1);
-    if (found.length) return found;
+    if (found !== undefined) return found;
   }
-  return [];
+  return undefined;
 }
 
 function fingerprint(message) {
@@ -194,7 +194,7 @@ export function normalizedFromPayload(payload, context, metadata = {}) {
     };
   }
   const records = recordsFrom(data);
-  if (records.length) {
+  if (records !== undefined) {
     const limited = metadata.recordLimit ? records.slice(0, metadata.recordLimit) : records;
     return summarizeRecords(limited, context, { ...metadata, total: data?.total ?? data?.count ?? metadata.total });
   }
