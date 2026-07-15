@@ -73,6 +73,17 @@ export function createTelemetryDietServer({ env = process.env } = {}) {
         trust: { readOnly: true, productionWrites: false, aiRawLogAccess: false },
       });
     }
+    const analysisMatch = request.method === 'GET' && url.pathname.match(/^\/api\/analysis\/([a-f0-9-]+)$/i);
+    if (analysisMatch) {
+      const analysis = analyses.get(analysisMatch[1]);
+      if (!analysis) return json(response, 404, { error: 'Analysis expired. Run the analysis again.' });
+      return json(response, 200, {
+        analysisId: analysisMatch[1],
+        summary: analysis.summary,
+        findings: analysis.findings,
+        artifacts: generateArtifacts(analysis.summary, analysis.findings, analysis.selectedIds),
+      });
+    }
     if (request.method !== 'POST') return false;
     const input = await body(request);
     if (url.pathname === '/api/connect') {
@@ -111,7 +122,7 @@ export function createTelemetryDietServer({ env = process.env } = {}) {
       const findings = analyzeTelemetry(summary);
       const artifacts = generateArtifacts(summary, findings);
       const analysisId = randomUUID();
-      analyses.set(analysisId, { summary, findings });
+      analyses.set(analysisId, { summary, findings, selectedIds: artifacts.selectedIds });
       if (analyses.size > 20) analyses.delete(analyses.keys().next().value);
       return json(response, 200, { analysisId, summary, findings, artifacts });
     }
@@ -119,6 +130,7 @@ export function createTelemetryDietServer({ env = process.env } = {}) {
       const analysis = analyses.get(input.analysisId);
       if (!analysis) throw new Error('Analysis expired. Run the analysis again.');
       const selectedIds = Array.isArray(input.selectedIds) ? input.selectedIds.filter((id) => typeof id === 'string') : [];
+      analysis.selectedIds = selectedIds;
       return json(response, 200, { artifacts: generateArtifacts(analysis.summary, analysis.findings, selectedIds) });
     }
     return false;
@@ -145,7 +157,8 @@ export function createTelemetryDietServer({ env = process.env } = {}) {
   }
 
   async function serveStatic(response, pathname) {
-    const relative = pathname === '/' ? 'index.html' : pathname.slice(1);
+    const appRoute = pathname === '/' || pathname === '/workbench' || /^\/results\/[a-f0-9-]+$/i.test(pathname);
+    const relative = appRoute ? 'index.html' : pathname.slice(1);
     const safe = normalize(relative).replace(/^(\.\.(\/|\\|$))+/, '');
     const file = join(webRoot, safe);
     try {

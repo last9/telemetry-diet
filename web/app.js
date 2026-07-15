@@ -17,6 +17,37 @@ const outputMeta = {
   markdown: { filename: 'telemetry-diet-report.md', type: 'text/markdown' },
 };
 
+function routeParams() {
+  return new URLSearchParams(window.location.search);
+}
+
+function scopeRoute(pathname = '/workbench') {
+  const params = new URLSearchParams();
+  if (state.provider) params.set('provider', state.provider);
+  if ($('#service-select').value) params.set('service', $('#service-select').value);
+  if ($('#environment-select').value) params.set('environment', $('#environment-select').value);
+  params.set('window', $('#window-select').value);
+  return `${pathname}?${params}`;
+}
+
+function navigate(path, { replace = false } = {}) {
+  window.history[replace ? 'replaceState' : 'pushState']({}, '', path);
+}
+
+function syncScopeRoute() {
+  if (!state.provider || window.location.pathname === '/') return;
+  if (window.location.pathname.startsWith('/results/')) {
+    state.analysisId = null;
+    state.findings = [];
+    state.artifacts = null;
+    $('#analysis-results').hidden = true;
+    $('#empty-state').hidden = false;
+    navigate(scopeRoute('/workbench'));
+    return;
+  }
+  navigate(scopeRoute('/workbench'), { replace: true });
+}
+
 async function api(path, payload) {
   const response = await fetch(path, {
     method: payload ? 'POST' : 'GET',
@@ -54,7 +85,7 @@ function setOptions(select, values, emptyLabel = 'No values returned') {
   });
 }
 
-async function connect(provider, button, { oauthRetry = false } = {}) {
+async function connect(provider, button, { oauthRetry = false, restore = false } = {}) {
   const loginWindow = provider !== 'sample' && !oauthRetry
     ? window.open('about:blank', `telemetry-diet-${provider}-oauth`, 'popup,width=620,height=760')
     : null;
@@ -65,26 +96,48 @@ async function connect(provider, button, { oauthRetry = false } = {}) {
   try {
     const data = await api('/api/connect', { provider });
     if (data.authorizationRequired) {
-      if (!loginWindow) throw new Error(`Allow popups, then log in with ${labels[provider]}.`);
+      if (!loginWindow) {
+        navigate('/', { replace: true });
+        toast(`Log in with ${labels[provider]} again to restore this screen.`);
+        return false;
+      }
       loginWindow.location.replace(data.authorizationUrl);
       toast(`Complete ${labels[provider]} login in the provider window.`);
-      return;
+      return false;
     }
     loginWindow?.close();
     state.provider = provider;
     setOptions($('#service-select'), data.services, 'No services found');
     setOptions($('#environment-select'), data.environments, 'All environments');
+    const params = routeParams();
+    const requestedService = params.get('service');
+    if (restore && requestedService && [...$('#service-select').options].some(({ value }) => value === requestedService)) {
+      $('#service-select').value = requestedService;
+      const scoped = await api('/api/environments', { provider, service: requestedService });
+      setOptions($('#environment-select'), scoped.environments, 'All environments');
+    }
+    const requestedEnvironment = params.get('environment');
+    if (restore && requestedEnvironment && [...$('#environment-select').options].some(({ value }) => value === requestedEnvironment)) {
+      $('#environment-select').value = requestedEnvironment;
+    }
+    const requestedWindow = params.get('window');
+    if (restore && requestedWindow && [...$('#window-select').options].some(({ value }) => value === requestedWindow)) {
+      $('#window-select').value = requestedWindow;
+    }
     $('#provider-input').value = labels[provider];
     $('#provider-label').textContent = labels[provider];
     $('#connection-name').textContent = `${data.connection.serverInfo?.name || labels[provider]} connected`;
     $('#connection-tools').textContent = data.connection.tools?.join(' · ') || 'Read-only MCP tool session';
     $('#connect-view').hidden = true;
     $('#workbench-view').hidden = false;
+    if (!restore) navigate(scopeRoute('/workbench'));
     document.title = `${labels[provider]} · Telemetry Diet`;
     if (data.warning) toast(data.warning);
+    return true;
   } catch (error) {
     loginWindow?.close();
     toast(error.message);
+    return false;
   } finally {
     button.removeAttribute('aria-busy');
     button.querySelector('strong').textContent = original;
@@ -96,6 +149,7 @@ async function updateEnvironments() {
   try {
     const { environments } = await api('/api/environments', { provider: state.provider, service: $('#service-select').value });
     setOptions($('#environment-select'), environments, 'All environments');
+    syncScopeRoute();
   } catch (error) {
     toast(error.message);
   }
@@ -219,6 +273,7 @@ async function analyze() {
       signal: 'logs',
     });
     renderAnalysis(data);
+    navigate(scopeRoute(`/results/${data.analysisId}`));
   } catch (error) {
     $('#loading-state').hidden = true;
     $('#empty-state').hidden = false;
@@ -245,7 +300,7 @@ function regenerate() {
   }, 120);
 }
 
-function reset() {
+function reset({ updateHistory = true } = {}) {
   state.provider = null;
   state.analysisId = null;
   state.findings = [];
@@ -256,6 +311,45 @@ function reset() {
   $('#loading-state').hidden = true;
   $('#empty-state').hidden = false;
   document.title = 'Telemetry Diet';
+  if (updateHistory) navigate('/');
+}
+
+async function restoreRoute() {
+  const pathname = window.location.pathname;
+  if (pathname === '/') {
+    reset({ updateHistory: false });
+    return;
+  }
+  const provider = routeParams().get('provider');
+  if (!['sample', 'datadog', 'last9'].includes(provider)) {
+    navigate('/', { replace: true });
+    reset({ updateHistory: false });
+    return;
+  }
+  if (state.provider !== provider || $('#workbench-view').hidden) {
+    const connected = await connect(provider, $(`.source-button[data-provider="${provider}"]`), { restore: true });
+    if (!connected) return;
+  }
+  if (pathname === '/workbench') {
+    $('#analysis-results').hidden = true;
+    $('#loading-state').hidden = true;
+    $('#empty-state').hidden = false;
+    return;
+  }
+  const resultMatch = pathname.match(/^\/results\/([a-f0-9-]+)$/i);
+  if (!resultMatch) {
+    navigate(scopeRoute('/workbench'), { replace: true });
+    return;
+  }
+  try {
+    const data = await api(`/api/analysis/${resultMatch[1]}`);
+    renderAnalysis(data);
+  } catch (error) {
+    navigate(scopeRoute('/workbench'), { replace: true });
+    $('#analysis-results').hidden = true;
+    $('#empty-state').hidden = false;
+    toast(error.message);
+  }
 }
 
 $$('.source-button').forEach((button) => button.addEventListener('click', () => connect(button.dataset.provider, button)));
@@ -266,8 +360,11 @@ window.addEventListener('message', (event) => {
   if (button) connect(provider, button, { oauthRetry: true });
 });
 $('#service-select').addEventListener('change', updateEnvironments);
+$('#environment-select').addEventListener('change', syncScopeRoute);
+$('#window-select').addEventListener('change', syncScopeRoute);
 $('#analyze-button').addEventListener('click', analyze);
 $('#change-source').addEventListener('click', reset);
+window.addEventListener('popstate', restoreRoute);
 $$('.output-tabs button').forEach((button) => button.addEventListener('click', () => {
   state.output = button.dataset.output;
   renderOutput();
@@ -297,4 +394,5 @@ api('/api/config').then((config) => {
     if (config.providers[provider].mode === 'hosted-oauth') small.textContent = 'Provider login · read-only tools';
     else if (!config.providers[provider].configured) small.textContent = 'Provider endpoint is not configured';
   }
-}).catch(() => {});
+  return restoreRoute();
+}).catch((error) => toast(error.message));
