@@ -143,6 +143,7 @@ button { cursor: pointer; }
 .review-total strong { display: block; font-size: 22px; font-variant-numeric: tabular-nums; }
 .review-total span { font-size: 10.5px; color: var(--faint); }
 .review-grid { display: grid; grid-template-columns: 1fr 300px; gap: 20px; align-items: start; }
+.changes-col, .cfg-col { min-width: 0; } /* let the columns shrink so rows never overflow the viewport */
 
 .changes-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px; }
 .changes-head h2 { margin: 0; font-size: 15px; }
