@@ -19,7 +19,7 @@ const verbClasses = { drop: 'v-drop', sample: 'v-sample', redact: 'v-redact', 'r
 const configGroups = [
   ['drop', 'Drop noisy logs'],
   ['sample', 'Sample noisy logs'],
-  ['redact', 'Redact PII fields'],
+  ['redact', 'Redact sensitive attributes'],
   ['remove-label', 'Un-index high-cardinality'],
   ['normalize', 'Normalize naming'],
   ['review', 'Flagged for review'],
@@ -306,7 +306,7 @@ function formatNumber(value) {
 function changeImpact(finding) {
   if (finding.action === 'drop') return { text: `−${formatNumber(finding.affectedCount)} events`, cls: 'vol' };
   if (finding.action === 'sample') return { text: `sample ${formatNumber(finding.affectedCount)}`, cls: 'vol' };
-  if (finding.action === 'redact') return { text: 'PII', cls: 'pii' };
+  if (finding.action === 'redact') return { text: 'sensitive', cls: 'risk' };
   if (finding.action === 'remove-label') return { text: 'high cardinality', cls: '' };
   if (finding.action === 'normalize') return { text: 'schema drift', cls: '' };
   return { text: 'review', cls: '' };
@@ -438,7 +438,7 @@ function renderSavings() {
   const pct = preview.directionalReductionPercent || 0;
   const baseline = readBaseline();
   const events = preview.recordsAffected || 0;
-  const pii = (preview.redactedFields || []).length;
+  const sensitive = (preview.redactedFields || []).length;
   $('#reduction-percent').textContent = `−${pct}%`;
   if (pct > 0 && baseline.gb > 0) {
     const gbSaved = baseline.gb * pct / 100;
@@ -450,7 +450,7 @@ function renderSavings() {
   }
   const bits = [];
   if (events) bits.push(`≈${formatNumber(events)} records affected / window`);
-  if (pii) bits.push(`${pii} PII field${pii > 1 ? 's' : ''} removed`);
+  if (sensitive) bits.push(`${sensitive} sensitive attribute${sensitive > 1 ? 's' : ''} redacted`);
   bits.push(`assumes ${baseline.gb} GB/day ingest, uniform event size`);
   // Keep the analyzer's own caveat — e.g. that overlapping drop categories make
   // the reduction an upper bound — rather than silently dropping it.
