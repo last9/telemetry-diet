@@ -161,6 +161,15 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 3px s
 .finding-copy > p { margin: 5px 0 0; color: var(--muted); font-size: 9px; line-height: 1.45; }
 .finding-examples { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #52625b !important; }
 .affected { display: block; margin-top: 4px; color: var(--ink); font-size: 9px; font-weight: 700; }
+.metric-results { margin-bottom: 14px; overflow-x: auto; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
+.metric-results table { width: 100%; border-collapse: collapse; font-size: 10px; }
+.metric-results th, .metric-results td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--soft-line); }
+.metric-results th { color: var(--muted); background: #f7f9f8; font-size: 8px; text-transform: uppercase; letter-spacing: .06em; }
+.metric-results td:first-child { max-width: 260px; overflow-wrap: anywhere; color: var(--ink); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.metric-results tr:last-child td { border-bottom: 0; }
+.limitations-panel { margin-top: 16px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 6px; background: #fffaf0; }
+.limitations-panel ul { margin: 7px 0 0; padding-left: 17px; color: #6d541f; font-size: 9px; line-height: 1.55; }
+.signal-output-panel pre { min-height: 360px; height: calc(100vh - 330px); max-height: 620px; }
 .policy-toggle { position: relative; width: 31px; height: 18px; margin-top: 5px; }
 .policy-toggle input { position: absolute; opacity: 0; }
 .policy-toggle span { position: absolute; inset: 0; border-radius: 10px; background: #ccd3cf; transition: background .15s; }

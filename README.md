@@ -1,8 +1,12 @@
 # Telemetry Diet
 
-> Telemetry Diet is an OSS MCP app that connects read-only to observability data, finds noisy/risky/high-cardinality logs, and generates tested OpenTelemetry and Last9 policy drafts before you change production.
+> Telemetry Diet is an OSS MCP app that connects read-only to observability data, finds noisy logs, underused metrics, and evidence-backed trace reduction candidates, then exports reviewable drafts before you change production.
 
-Telemetry Diet is a local policy testbench, not a dashboard or hosted log-pasting service. It discovers a service through MCP, fetches provider summaries first, analyzes them with deterministic rules, and keeps every generated policy visible for human review.
+Telemetry Diet is a local telemetry analysis workbench, not a dashboard or hosted telemetry-pasting service. Its three separate workflows are deterministic and read-only:
+
+- **Logs** analyzes a selected service and time window for noise, risky fields, and cardinality problems.
+- **Metrics** compares the organization metric inventory with PromQL references in dashboards, alerts, and indicators.
+- **Traces** ranks measured reduction candidates while preserving service boundaries, errors, and business spans.
 
 ```bash
 npx telemetry-diet
@@ -51,12 +55,12 @@ With the local app running:
 
 1. Click **Connect sample MCP**.
 2. Keep `checkout-api`, `production`, and `Last 6 hours` selected.
-3. Click **Analyze selected window**.
+3. Choose **Logs**, **Metrics**, or **Traces**, then click the analysis button.
 4. Inspect 13 deterministic findings, including successful health checks, DEBUG noise, risky fields, high-cardinality fields, and resource naming drift.
 5. Toggle policy suggestions and watch the directional before/after preview update.
 6. Inspect or download the Markdown report, OTel/OTTL draft, and Last9 draft JSON.
 
-The bundled sample is served by a real local stdio MCP server. It contains realistic checkout/payment aggregates and already-redacted examples; no credentials or pasted logs are needed.
+The bundled sample is served by a real local stdio MCP server. It contains generic, already-redacted examples for every workflow; no credentials or pasted telemetry are needed.
 
 ## Connect Datadog MCP
 
@@ -90,7 +94,7 @@ Datadog permissions still govern every result. Telemetry Diet requires log-read 
 
 ## Connect Last9 MCP
 
-The Last9 adapter targets:
+The Last9 log adapter targets:
 
 - `get_service_summary`
 - `get_service_environments`
@@ -127,7 +131,28 @@ npx telemetry-diet
 
 `TELEMETRY_DIET_LAST9_SERVICE` is recommended when the MCP server has no global service-list tool. Existing drop rules are read for context. The generated Last9 policy is an export-only draft: there is no `add_drop_rule` or other write path in this launch version.
 
+Metric usage dynamically resolves a read-only metric inventory plus at least one reference source: native dashboards, embedded Grafana dashboards, alerts, or entity indicators. Trace Intelligence prefers an aggregate trace-analysis capability and can use only a bounded trace-search fallback. Both workflows fail closed when the required read contract is unavailable or unrecognized.
+
 See [provider setup](docs/mcp-providers.md) for transport and response-normalization details.
+
+## Metric usage
+
+Metric usage uses a PromQL syntax tree rather than regular expressions. It reports each metric as referenced by multiple scanned queries, referenced once, or unreferenced in the scanned sources. Protection policy is a separate flag; it never silently turns an unreferenced metric into a referenced one.
+
+The report is organization-wide and includes exact query provenance. It does not observe ad hoc queries or external consumers, so an unreferenced result is a review candidate, not proof that a metric is unused. See [metric usage](docs/metric-usage.md).
+
+## Trace Intelligence
+
+Trace Intelligence ranks measured bytes before span counts and considers these guarded levers in order:
+
+1. Resource-attribute trimming that preserves critical service and SDK attributes.
+2. Conservative UUID and long-hex span-name normalization when multiple names collapse to one redacted pattern.
+3. Selective redundant instrumentation disablement while retaining the paired boundary span.
+4. Exact low-value or health-route `INTERNAL` leaf filters that exclude errors, business spans, and protected boundary spans.
+5. Fast-success cohorts as review-only sampling candidates with an explicit measured-duration threshold.
+6. Residual head sampling as a final lever, with explicit APM and error-visibility caveats.
+
+Generated OTel Collector and OTTL text is visibly marked **EXPORT-ONLY DRAFT** and is never applied. See [Trace Intelligence](docs/trace-intelligence.md).
 
 ## What the analyzer proves
 
@@ -144,9 +169,7 @@ Every finding includes confidence, affected records in the selected window, reda
 
 ## Generated outputs
 
-1. A Markdown report with source scope, findings, policy choices, sample impact, caveats, and embedded drafts.
-2. Best-effort OpenTelemetry Collector YAML with visible OTTL filters, attribute deletion, and resource normalization.
-3. Last9 draft-policy JSON with filters, action, explanation, confidence, and source-finding provenance.
+Outputs depend on the selected workflow: logs produce a Markdown report plus OTel/OTTL and Last9 policy drafts; metrics produce Markdown and JSON usage reports; traces produce Markdown plus OTel Collector/OTTL export-only drafts.
 
 Generated semantics and portability limits are documented in [policy outputs](docs/policy-output.md).
 
@@ -156,6 +179,7 @@ Generated semantics and portability limits are documented in [policy outputs](do
 
 - Provider OAuth plus read-only MCP calls only; no production write implementation ships.
 - Raw records are summarized locally and are not sent to an AI service.
+- Metric query definitions and trace aggregates are normalized locally; raw trace records are never returned to the browser.
 - Examples are redacted at the provider boundary and again before the UI/report.
 - Generated configuration is always visible and export-only.
 - Existing Last9 rules are context, not mutation targets.
@@ -167,17 +191,19 @@ Telemetry Diet does not provide exact cost estimation, automated rollout, Datado
 
 ```text
 Sample MCP  ─┐
-Datadog MCP ─┼─> provider adapter ─> redacted TelemetrySummary
+Datadog MCP ─┼─> signal adapter ─> normalized, bounded evidence
 Last9 MCP  ──┘                              │
                                             v
-                               deterministic analyzer
+                          deterministic signal analyzer
                                             │
-                             preview + visible policy drafts
+                             report + visible export drafts
 ```
 
 ```text
 bin/                 CLI and sample MCP executables
-src/core/            analyzer, redaction, preview, policy, report
+src/core/            log analyzer, redaction, preview, policy, report
+src/metric-usage/    PromQL parsing, protection policy, usage reports
+src/trace-intelligence/ byte-first reduction analysis and draft exports
 src/mcp/             stdio client/server and Streamable HTTP client
 src/providers/       sample, Datadog, and Last9 adapters
 src/sample/          bundled sample scenario

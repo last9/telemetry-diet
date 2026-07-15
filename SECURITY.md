@@ -8,6 +8,8 @@ Include the affected version, reproduction steps using synthetic data, impact, a
 
 ## Trust boundary
 
-Telemetry Diet runs locally and uses read-only provider tools. OAuth tokens remain in process memory. The app does not send raw logs to an AI service and does not implement production policy writes.
+Telemetry Diet runs locally and uses read-only provider tools. OAuth tokens remain in process memory. The app does not send raw telemetry to an AI service and does not implement production policy writes.
 
-Generated OTel and Last9 policies are drafts. Operators must review and test them before deployment.
+Raw log and trace records are bounded, normalized, and discarded before results reach the browser. Metric references retain query text for provenance; exported reports should therefore be handled according to the source organization's access policy.
+
+Generated OTel, OTTL, and Last9 policies are visible export-only drafts. Operators must review, pilot, measure, and test them before deployment.

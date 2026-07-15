@@ -1,7 +1,7 @@
 {
   "name": "telemetry-diet",
   "version": "0.1.0",
-  "description": "MCP-first policy testbench for noisy, risky, and high-cardinality logs",
+  "description": "Read-only telemetry analyzer for log policy, metric usage, and trace reduction drafts",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/last9/telemetry-diet.git"
@@ -39,11 +39,15 @@
     "observability",
     "opentelemetry",
     "logs",
+    "metrics",
+    "traces",
+    "promql",
     "datadog",
     "last9"
   ],
   "license": "Apache-2.0",
   "dependencies": {
-    "@modelcontextprotocol/sdk": "1.29.0"
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "@prometheus-io/lezer-promql": "0.313.0"
   }
 }
