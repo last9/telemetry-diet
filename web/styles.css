@@ -59,7 +59,7 @@ button { cursor: pointer; }
 .local-badge span { width: 6px; height: 6px; border-radius: 50%; background: var(--keep); box-shadow: 0 0 7px var(--keep); }
 
 .connect-main { width: min(1080px, 90vw); margin: auto; padding: 48px 0; display: grid; grid-template-columns: 1.05fr .95fr; gap: 6vw; align-items: center; }
-.intro-copy h1 { margin: 0; font-size: 44px; line-height: 1.05; letter-spacing: -.02em; font-weight: 680; text-wrap: balance; }
+.intro-copy h1 { margin: 0; font-size: 44px; line-height: 1.05; letter-spacing: 0; font-weight: 680; text-wrap: balance; }
 .intro-copy .eyebrow { color: var(--keep); }
 .lede { margin: 20px 0 0; font-size: 18px; color: var(--ink); line-height: 1.45; max-width: 30ch; }
 .intro-detail { margin: 16px 0 0; color: var(--muted); font-size: 13.5px; line-height: 1.6; max-width: 46ch; }
@@ -137,7 +137,7 @@ button { cursor: pointer; }
 
 /* ---------- logs: review queue ---------- */
 .review-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
-.review-head h1 { margin: 0 0 4px; font-size: 22px; letter-spacing: -.01em; }
+.review-head h1 { margin: 0 0 4px; font-size: 22px; letter-spacing: 0; }
 .review-head #results-scope { margin: 0; color: var(--muted); font-family: var(--mono); font-size: 12px; }
 .review-total { text-align: right; font-family: var(--mono); }
 .review-total strong { display: block; font-size: 22px; font-variant-numeric: tabular-nums; }
@@ -216,7 +216,7 @@ button { cursor: pointer; }
 
 /* ---------- shared signal views (traces / metrics) ---------- */
 .results-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
-.results-heading h1 { margin: 4px 0 4px; font-size: 22px; letter-spacing: -.01em; }
+.results-heading h1 { margin: 4px 0 4px; font-size: 22px; letter-spacing: 0; }
 .results-heading > div > p:last-child { margin: 0; color: var(--muted); font-family: var(--mono); font-size: 12px; }
 .analysis-total { text-align: right; font-family: var(--mono); }
 .analysis-total strong { display: block; color: var(--keep); font-size: 22px; font-variant-numeric: tabular-nums; }
