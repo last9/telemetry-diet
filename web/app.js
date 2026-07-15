@@ -3,12 +3,29 @@ const state = {
   signal: 'logs',
   analysisId: null,
   findings: [],
+  selected: new Set(),
   artifacts: null,
   output: 'otel',
   signalArtifacts: null,
   signalOutput: null,
   config: null,
 };
+
+// Logs review-queue: each finding is a proposed change led by a verb derived
+// from finding.action. Colour is meaning, not decoration — amber = volume,
+// rose = privacy; the rest stay neutral.
+const verbLabels = { drop: 'Drop', sample: 'Sample', redact: 'Redact', 'remove-label': 'Un-index', normalize: 'Normalize', review: 'Review' };
+const verbClasses = { drop: 'v-drop', sample: 'v-sample', redact: 'v-redact', 'remove-label': 'v-unindex', normalize: 'v-normalize', review: 'v-review' };
+const configGroups = [
+  ['drop', 'Drop noisy logs'],
+  ['sample', 'Sample noisy logs'],
+  ['redact', 'Redact PII fields'],
+  ['remove-label', 'Un-index high-cardinality'],
+  ['normalize', 'Normalize naming'],
+  ['review', 'Flagged for review'],
+];
+const copyLabels = { otel: 'Copy OTel config', last9: 'Copy Last9 config', markdown: 'Copy report' };
+const BASELINE_KEY = 'telemetry-diet.baseline';
 
 let analysisGeneration = 0;
 let analysisInFlight = false;
@@ -69,6 +86,7 @@ function syncScopeRoute() {
   if (window.location.pathname.startsWith('/results/')) {
     state.analysisId = null;
     state.findings = [];
+    state.selected = new Set();
     state.artifacts = null;
     state.signalArtifacts = null;
     $('#analysis-results').hidden = true;
@@ -284,65 +302,186 @@ function formatNumber(value) {
   return new Intl.NumberFormat().format(value || 0);
 }
 
-function renderFindings(selectedIds) {
-  const list = $('#findings-list');
-  list.replaceChildren();
-  state.findings.forEach((finding) => {
-    const item = document.createElement('article');
-    item.className = 'finding';
-    item.dataset.category = finding.category;
-
-    const icon = document.createElement('span');
-    icon.className = 'finding-icon';
-    icon.textContent = categorySymbols[finding.category] || '?';
-
-    const copy = document.createElement('div');
-    copy.className = 'finding-copy';
-    const titleLine = document.createElement('div');
-    titleLine.className = 'finding-title-line';
-    const title = document.createElement('strong');
-    title.textContent = finding.title;
-    const confidence = document.createElement('span');
-    confidence.className = 'confidence';
-    confidence.textContent = `${finding.confidence} confidence`;
-    titleLine.append(title, confidence);
-    const action = document.createElement('p');
-    action.textContent = finding.suggestedAction;
-    const examples = document.createElement('p');
-    examples.className = 'finding-examples';
-    examples.title = finding.examplesRedacted.join(' · ');
-    examples.textContent = finding.examplesRedacted.join(' · ') || finding.warning;
-    const affected = document.createElement('span');
-    affected.className = 'affected';
-    affected.textContent = `${formatNumber(finding.affectedCount)} records affected in selected window`;
-    copy.append(titleLine, action, examples, affected);
-
-    const toggle = document.createElement('label');
-    toggle.className = 'policy-toggle';
-    toggle.title = `Include ${finding.title} in generated drafts`;
-    const input = document.createElement('input');
-    input.type = 'checkbox';
-    input.checked = selectedIds.includes(finding.id);
-    input.dataset.finding = finding.id;
-    input.setAttribute('aria-label', `Include ${finding.title} in generated policy`);
-    input.addEventListener('change', regenerate);
-    toggle.append(input, document.createElement('span'));
-
-    item.append(icon, copy, toggle);
-    list.append(item);
-  });
+function changeImpact(finding) {
+  if (finding.action === 'drop') return { text: `−${formatNumber(finding.affectedCount)} events`, cls: 'vol' };
+  if (finding.action === 'sample') return { text: `sample ${formatNumber(finding.affectedCount)}`, cls: 'vol' };
+  if (finding.action === 'redact') return { text: 'PII', cls: 'pii' };
+  if (finding.action === 'remove-label') return { text: 'high cardinality', cls: '' };
+  if (finding.action === 'normalize') return { text: 'schema drift', cls: '' };
+  return { text: 'review', cls: '' };
 }
 
-function renderPreview() {
+function evidenceLabel(finding) {
+  if (finding.category === 'cardinality') return `Field values · redacted — ${formatNumber(finding.affectedCount)} records`;
+  if (finding.category === 'drift') return `Conflicting fields — ${formatNumber(finding.affectedCount)} affected`;
+  return `Matched log lines · redacted — ${finding.examplesRedacted.length} of ${formatNumber(finding.affectedCount)}`;
+}
+
+// One proposed-change row: verb · title · impact · include/skip, with a
+// click-to-expand panel showing the plain-language why and the provider's
+// verbatim redacted samples (no client-side reformatting).
+function renderChange(finding) {
+  const on = state.selected.has(finding.id);
+  const article = document.createElement('article');
+  article.className = `change${on ? '' : ' skip'}`;
+  article.dataset.id = finding.id;
+  article.dataset.action = finding.action;
+  article.dataset.category = finding.category;
+
+  const row = document.createElement('div');
+  row.className = 'change-row';
+  row.setAttribute('role', 'button');
+  row.tabIndex = 0;
+  row.setAttribute('aria-expanded', 'false');
+
+  const verb = document.createElement('span');
+  verb.className = `verb ${verbClasses[finding.action] || ''}`.trim();
+  verb.textContent = verbLabels[finding.action] || finding.action;
+
+  const title = document.createElement('span');
+  title.className = 'change-title';
+  title.textContent = finding.title;
+  title.title = finding.title;
+
+  const grow = document.createElement('span');
+  grow.className = 'change-grow';
+
+  const impact = changeImpact(finding);
+  const impactEl = document.createElement('span');
+  impactEl.className = `change-impact ${impact.cls}`.trim();
+  impactEl.textContent = impact.text;
+
+  const include = document.createElement('button');
+  include.type = 'button';
+  include.className = `inc${on ? ' on' : ''}`;
+  include.setAttribute('aria-pressed', String(on));
+  include.setAttribute('aria-label', `${on ? 'Remove' : 'Add'} ${finding.title} ${on ? 'from' : 'to'} config`);
+  include.textContent = on ? '✓ In config' : '+ Add';
+  include.addEventListener('click', (event) => { event.stopPropagation(); toggleChange(finding.id); });
+
+  const caret = document.createElement('span');
+  caret.className = 'caret';
+  caret.setAttribute('aria-hidden', 'true');
+  caret.textContent = '▾';
+
+  row.append(verb, title, grow, impactEl, include, caret);
+
+  const detail = document.createElement('div');
+  detail.className = 'change-detail';
+  const why = document.createElement('p');
+  why.className = 'why';
+  const conf = document.createElement('span');
+  conf.className = 'conf';
+  conf.textContent = `${finding.confidence} confidence`;
+  why.append(conf, document.createTextNode(finding.suggestedAction || finding.warning || ''));
+  const evLabel = document.createElement('div');
+  evLabel.className = 'ev-label';
+  evLabel.textContent = evidenceLabel(finding);
+  const samples = document.createElement('div');
+  samples.className = 'samples';
+  const lines = finding.examplesRedacted.length ? finding.examplesRedacted : ['No sample returned by the provider.'];
+  lines.forEach((line) => {
+    const sline = document.createElement('div');
+    sline.className = 'sline';
+    sline.textContent = line;
+    samples.append(sline);
+  });
+  detail.append(why, evLabel, samples);
+
+  const toggleOpen = () => row.setAttribute('aria-expanded', String(article.classList.toggle('open')));
+  row.addEventListener('click', toggleOpen);
+  row.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); toggleOpen(); }
+  });
+
+  article.append(row, detail);
+  return article;
+}
+
+function renderChanges() {
+  const list = $('#findings-list');
+  list.replaceChildren(...state.findings.map(renderChange));
+}
+
+// Toggle a change in place (preserves any expanded rows) and re-derive the
+// config + savings from the server.
+function toggleChange(id) {
+  const on = !state.selected.has(id);
+  if (on) state.selected.add(id); else state.selected.delete(id);
+  const article = $(`#findings-list .change[data-id="${id}"]`);
+  if (article) {
+    article.classList.toggle('skip', !on);
+    const include = article.querySelector('.inc');
+    include.classList.toggle('on', on);
+    include.setAttribute('aria-pressed', String(on));
+    include.textContent = on ? '✓ In config' : '+ Add';
+  }
+  regenerate();
+}
+
+function readBaseline() {
+  let stored = {};
+  try { stored = JSON.parse(localStorage.getItem(BASELINE_KEY) || '{}'); } catch { stored = {}; }
+  const gb = Number(stored.gb);
+  const cost = Number(stored.cost);
+  return { gb: Number.isFinite(gb) && gb > 0 ? gb : 40, cost: Number.isFinite(cost) && cost > 0 ? cost : 0.5 };
+}
+
+function formatGb(gb) { return gb >= 100 ? `${Math.round(gb)} GB` : `${gb.toFixed(1)} GB`; }
+function formatMoney(value) { return value >= 1000 ? `$${(value / 1000).toFixed(1)}k` : `$${Math.round(value)}`; }
+
+// Savings are honest: the volume % comes from the server preview; GB/$ are that
+// percentage applied to a baseline the user sets, always flagged directional.
+function renderSavings() {
   const preview = state.artifacts.preview;
-  $('#before-count').textContent = formatNumber(preview.recordsAnalyzed);
-  $('#after-count').textContent = formatNumber(preview.recordsAfter);
-  $('#reduction-percent').textContent = `${preview.directionalReductionPercent}% affected`;
-  $('#preview-caveat').textContent = preview.caveat;
-  const retained = preview.recordsAnalyzed ? (preview.recordsAfter / preview.recordsAnalyzed) * 100 : 100;
-  $('#impact-retained').style.width = `${retained}%`;
-  $('#impact-removed').style.width = `${100 - retained}%`;
-  $('#noise-summary').textContent = `${preview.directionalReductionPercent}%`;
+  const pct = preview.directionalReductionPercent || 0;
+  const baseline = readBaseline();
+  const events = preview.recordsAffected || 0;
+  const pii = (preview.redactedFields || []).length;
+  $('#reduction-percent').textContent = `−${pct}%`;
+  if (pct > 0 && baseline.gb > 0) {
+    const gbSaved = baseline.gb * pct / 100;
+    $('#savings-data').textContent = `≈${formatGb(gbSaved)}`;
+    $('#savings-cost').textContent = `≈${formatMoney(gbSaved * 30 * baseline.cost)}`;
+  } else {
+    $('#savings-data').textContent = '—';
+    $('#savings-cost').textContent = '—';
+  }
+  const bits = [];
+  if (events) bits.push(`≈${formatNumber(events)} events trimmed / window`);
+  if (pii) bits.push(`${pii} PII field${pii > 1 ? 's' : ''} removed`);
+  bits.push(`assumes ${baseline.gb} GB/day ingest, uniform event size`);
+  $('#preview-caveat').textContent = `Directional. ${bits.join(' · ')}. Nothing is applied.`;
+  renderConfigBreakdown();
+}
+
+function renderConfigBreakdown() {
+  const counts = {};
+  state.findings.forEach((finding) => {
+    if (state.selected.has(finding.id)) counts[finding.action] = (counts[finding.action] || 0) + 1;
+  });
+  const total = state.selected.size;
+  $('#cfg-count').textContent = `${total} change${total === 1 ? '' : 's'}`;
+  $('#finding-count').textContent = `${state.findings.length} · ${total} in config`;
+  const box = $('#cfg-breakdown');
+  box.replaceChildren();
+  const rows = configGroups.filter(([action]) => counts[action]);
+  if (!rows.length) {
+    const empty = document.createElement('div');
+    empty.className = 'br empty';
+    empty.append(Object.assign(document.createElement('span'), { textContent: 'Nothing included yet' }));
+    empty.append(Object.assign(document.createElement('b'), { textContent: '0' }));
+    box.append(empty);
+  } else {
+    rows.forEach(([action, label]) => {
+      const br = document.createElement('div');
+      br.className = 'br';
+      br.append(Object.assign(document.createElement('span'), { textContent: label }));
+      br.append(Object.assign(document.createElement('b'), { textContent: String(counts[action]) }));
+      box.append(br);
+    });
+  }
+  $('#copy-output').disabled = total === 0;
 }
 
 function currentOutput() {
@@ -352,23 +491,21 @@ function currentOutput() {
 
 function renderOutput() {
   $('#output-code').textContent = currentOutput();
-  $$('.output-tabs button').forEach((button) => button.classList.toggle('active', button.dataset.output === state.output));
+  $$('.fmt button').forEach((button) => button.classList.toggle('active', button.dataset.output === state.output));
+  $('#copy-output').textContent = copyLabels[state.output] || 'Copy config';
 }
 
 function renderAnalysis(data) {
   state.analysisId = data.analysisId;
   state.findings = data.findings;
   state.artifacts = data.artifacts;
-  const { summary, findings, artifacts } = data;
+  state.selected = new Set(data.artifacts.selectedIds); // smart defaults come from the server
+  const { summary } = data;
   $('#results-title').textContent = summary.service || 'Selected service';
   $('#results-scope').textContent = `${summary.environment || 'all environments'} · ${new Date(summary.timeWindow.start).toLocaleString()} – ${new Date(summary.timeWindow.end).toLocaleString()}`;
   $('#records-total').textContent = formatNumber(summary.recordsAnalyzed);
-  $('#risk-summary').textContent = findings.filter((finding) => finding.category === 'risk').length;
-  $('#cardinality-summary').textContent = findings.filter((finding) => finding.category === 'cardinality').length;
-  $('#drift-summary').textContent = findings.filter((finding) => finding.category === 'drift').length;
-  $('#finding-count').textContent = `${findings.length} findings`;
-  renderFindings(artifacts.selectedIds);
-  renderPreview();
+  renderChanges();
+  renderSavings();
   renderOutput();
   $('#loading-state').hidden = true;
   $('#analysis-results').hidden = false;
@@ -592,12 +729,12 @@ function regenerate() {
   generationTimer = setTimeout(async () => {
     generationTimer = undefined;
     if (state.signal !== signal || state.analysisId !== analysisId) return;
-    const selectedIds = $$('[data-finding]:checked').map((input) => input.dataset.finding);
+    const selectedIds = [...state.selected];
     try {
       const { artifacts } = await api('/api/generate', { analysisId, selectedIds });
       if (state.signal !== signal || state.analysisId !== analysisId) return;
       state.artifacts = artifacts;
-      renderPreview();
+      renderSavings();
       renderOutput();
     } catch (error) {
       toast(error.message);
@@ -689,10 +826,30 @@ $$('[data-signal]').forEach((button) => button.addEventListener('click', () => s
 $('#analyze-button').addEventListener('click', analyze);
 $('#change-source').addEventListener('click', reset);
 window.addEventListener('popstate', restoreRoute);
-$$('.output-tabs button').forEach((button) => button.addEventListener('click', () => {
+$$('.fmt button').forEach((button) => button.addEventListener('click', () => {
   state.output = button.dataset.output;
   renderOutput();
 }));
+$('#toggle-config').addEventListener('click', () => {
+  const pre = $('.cfg-code');
+  const willOpen = pre.hidden;
+  pre.hidden = !willOpen;
+  const button = $('#toggle-config');
+  button.setAttribute('aria-expanded', String(willOpen));
+  button.textContent = willOpen ? 'Hide draft' : 'View draft';
+});
+(() => {
+  const baseline = readBaseline();
+  $('#ingest-gb').value = baseline.gb;
+  $('#cost-gb').value = baseline.cost;
+  const persist = () => {
+    const stored = { gb: Number($('#ingest-gb').value), cost: Number($('#cost-gb').value) };
+    try { localStorage.setItem(BASELINE_KEY, JSON.stringify(stored)); } catch { /* storage unavailable */ }
+    if (state.signal === 'logs' && state.artifacts) renderSavings();
+  };
+  $('#ingest-gb').addEventListener('input', persist);
+  $('#cost-gb').addEventListener('input', persist);
+})();
 $('#copy-output').addEventListener('click', async () => {
   try {
     await navigator.clipboard.writeText(currentOutput());
