@@ -32,6 +32,7 @@ let analysisInFlight = false;
 let routeGeneration = 0;
 let generationTimer;
 let regenToken = 0;
+let changeSeq = 0; // source of DOM-safe ids for change detail panels
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -325,7 +326,6 @@ function renderChange(finding) {
   const on = state.selected.has(finding.id);
   const article = document.createElement('article');
   article.className = `change${on ? '' : ' skip'}`;
-  article.dataset.id = finding.id;
   article.dataset.action = finding.action;
   article.dataset.category = finding.category;
 
@@ -335,7 +335,9 @@ function renderChange(finding) {
   // The row is not itself a control. A disclosure button (holding only
   // non-interactive spans) reveals the evidence, and the Include button lives
   // beside it — never nested inside another interactive element.
-  const detailId = `change-detail-${finding.id}`;
+  // finding.id contains provider-derived field names (spaces, dots, brackets),
+  // so derive the DOM id from a counter rather than interpolating it.
+  const detailId = `change-detail-${changeSeq += 1}`;
   const disclosure = document.createElement('button');
   disclosure.type = 'button';
   disclosure.className = 'change-disclosure';
@@ -372,7 +374,16 @@ function renderChange(finding) {
   include.setAttribute('aria-pressed', String(on));
   include.setAttribute('aria-label', `${on ? 'Remove' : 'Add'} ${finding.title} ${on ? 'from' : 'to'} config`);
   include.textContent = on ? '✓ In config' : '+ Add';
-  include.addEventListener('click', () => toggleChange(finding.id));
+  // Update via closure references — never re-select this row by finding.id.
+  include.addEventListener('click', () => {
+    const nowOn = !state.selected.has(finding.id);
+    if (nowOn) state.selected.add(finding.id); else state.selected.delete(finding.id);
+    article.classList.toggle('skip', !nowOn);
+    include.classList.toggle('on', nowOn);
+    include.setAttribute('aria-pressed', String(nowOn));
+    include.textContent = nowOn ? '✓ In config' : '+ Add';
+    regenerate();
+  });
 
   row.append(disclosure, include);
 
@@ -418,20 +429,6 @@ function renderChanges() {
 
 // Toggle a change in place (preserves any expanded rows) and re-derive the
 // config + savings from the server.
-function toggleChange(id) {
-  const on = !state.selected.has(id);
-  if (on) state.selected.add(id); else state.selected.delete(id);
-  const article = $(`#findings-list .change[data-id="${id}"]`);
-  if (article) {
-    article.classList.toggle('skip', !on);
-    const include = article.querySelector('.inc');
-    include.classList.toggle('on', on);
-    include.setAttribute('aria-pressed', String(on));
-    include.textContent = on ? '✓ In config' : '+ Add';
-  }
-  regenerate();
-}
-
 function readBaseline() {
   let stored = {};
   try { stored = JSON.parse(localStorage.getItem(BASELINE_KEY) || '{}'); } catch { stored = {}; }
