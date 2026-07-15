@@ -331,9 +331,16 @@ function renderChange(finding) {
 
   const row = document.createElement('div');
   row.className = 'change-row';
-  row.setAttribute('role', 'button');
-  row.tabIndex = 0;
-  row.setAttribute('aria-expanded', 'false');
+
+  // The row is not itself a control. A disclosure button (holding only
+  // non-interactive spans) reveals the evidence, and the Include button lives
+  // beside it — never nested inside another interactive element.
+  const detailId = `change-detail-${finding.id}`;
+  const disclosure = document.createElement('button');
+  disclosure.type = 'button';
+  disclosure.className = 'change-disclosure';
+  disclosure.setAttribute('aria-expanded', 'false');
+  disclosure.setAttribute('aria-controls', detailId);
 
   const verb = document.createElement('span');
   verb.className = `verb ${verbClasses[finding.action] || ''}`.trim();
@@ -352,23 +359,27 @@ function renderChange(finding) {
   impactEl.className = `change-impact ${impact.cls}`.trim();
   impactEl.textContent = impact.text;
 
+  const caret = document.createElement('span');
+  caret.className = 'caret';
+  caret.setAttribute('aria-hidden', 'true');
+  caret.textContent = '▾';
+
+  disclosure.append(verb, title, grow, impactEl, caret);
+
   const include = document.createElement('button');
   include.type = 'button';
   include.className = `inc${on ? ' on' : ''}`;
   include.setAttribute('aria-pressed', String(on));
   include.setAttribute('aria-label', `${on ? 'Remove' : 'Add'} ${finding.title} ${on ? 'from' : 'to'} config`);
   include.textContent = on ? '✓ In config' : '+ Add';
-  include.addEventListener('click', (event) => { event.stopPropagation(); toggleChange(finding.id); });
+  include.addEventListener('click', () => toggleChange(finding.id));
 
-  const caret = document.createElement('span');
-  caret.className = 'caret';
-  caret.setAttribute('aria-hidden', 'true');
-  caret.textContent = '▾';
-
-  row.append(verb, title, grow, impactEl, include, caret);
+  row.append(disclosure, include);
 
   const detail = document.createElement('div');
   detail.className = 'change-detail';
+  detail.id = detailId;
+  detail.hidden = true;
   const why = document.createElement('p');
   why.className = 'why';
   const conf = document.createElement('span');
@@ -389,10 +400,11 @@ function renderChange(finding) {
   });
   detail.append(why, evLabel, samples);
 
-  const toggleOpen = () => row.setAttribute('aria-expanded', String(article.classList.toggle('open')));
-  row.addEventListener('click', toggleOpen);
-  row.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); toggleOpen(); }
+  disclosure.addEventListener('click', () => {
+    const open = detail.hidden;
+    detail.hidden = !open;
+    disclosure.setAttribute('aria-expanded', String(open));
+    article.classList.toggle('open', open);
   });
 
   article.append(row, detail);
