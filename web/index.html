@@ -12,27 +12,28 @@
 
     <main id="connect-view" class="connect-view">
       <header class="connect-header">
-        <div class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></div>
-        <div class="brand-name">Telemetry Diet</div>
-        <div class="local-badge"><span></span> Local workbench</div>
+        <div class="brand-mark" aria-hidden="true"></div>
+        <div class="brand-name">telemetry diet</div>
+        <div class="local-badge"><span></span> local · read-only</div>
       </header>
 
       <section class="connect-main" aria-labelledby="connect-title">
         <div class="intro-copy">
-          <p class="eyebrow">READ-ONLY MCP POLICY TESTBENCH</p>
-          <h1 id="connect-title">Telemetry Diet</h1>
-          <p class="lede">Find telemetry waste and risk before it hits your observability bill.</p>
-          <p class="intro-detail">Choose a source. Telemetry stays between this local process and your configured MCP server.</p>
+          <p class="eyebrow">read-only · local · mcp-native</p>
+          <h1 id="connect-title">Put your telemetry on a diet.</h1>
+          <p class="lede">Find the noisy and risky signals inflating your observability bill — before they ship.</p>
+          <p class="intro-detail">Telemetry Diet reads your logs, traces, and metrics through a read-only MCP server, diagnoses them deterministically, and hands you a policy draft to apply yourself. Nothing leaves this local process except calls to your configured MCP server.</p>
         </div>
 
         <div class="source-actions" aria-label="Observability source">
+          <p class="side-label">choose a source</p>
           <button class="source-button sample" data-provider="sample">
             <span class="source-icon" aria-hidden="true">S</span>
             <span><strong>Connect sample MCP</strong><small>No credentials · bundled data</small></span>
             <span class="arrow" aria-hidden="true">→</span>
           </button>
           <button class="source-button" data-provider="datadog">
-            <span class="source-icon datadog" aria-hidden="true">D</span>
+            <span class="source-icon datadog" aria-hidden="true">DD</span>
             <span><strong>Log in with Datadog</strong><small>Your Datadog RBAC · read-only</small></span>
             <span class="arrow" aria-hidden="true">→</span>
           </button>
@@ -41,31 +42,24 @@
             <span><strong>Log in with Last9</strong><small>Provider OAuth · read-only</small></span>
             <span class="arrow" aria-hidden="true">→</span>
           </button>
-        </div>
-      </section>
 
-      <section class="sample-result" aria-labelledby="sample-result-title">
-        <div class="sample-heading">
-          <p class="eyebrow">SAMPLE RESULT</p>
-          <h2 id="sample-result-title">checkout-api · production</h2>
-        </div>
-        <div class="sample-metrics">
-          <div><strong>2,000</strong><span>logs analyzed</span></div>
-          <div class="metric-coral"><strong>38%</strong><span>likely noise</span></div>
-          <div class="metric-red"><strong>3</strong><span>risky fields found</span></div>
-          <div class="metric-blue"><strong>2</strong><span>high-cardinality fields flagged</span></div>
-        </div>
-        <div class="ready-list">
-          <span><b>✓</b> OTel Collector config ready</span>
-          <span><b>✓</b> Last9 draft ready</span>
+          <section class="sample-result" aria-labelledby="sample-result-title">
+            <p class="eyebrow" id="sample-result-title">last sample diagnosis · checkout-api / production</p>
+            <div class="sample-bar" aria-hidden="true"><i style="flex-basis:62%"></i><b style="flex-basis:38%"></b></div>
+            <div class="sample-metrics">
+              <span><strong>2,000</strong> events</span>
+              <span class="metric-amber"><strong>~38%</strong> trimmable</span>
+              <span class="metric-rose"><strong>3</strong> risky fields</span>
+            </div>
+          </section>
         </div>
       </section>
 
       <footer class="trust-strip">
-        <span><b>READ ONLY</b> No production changes</span>
-        <span>No raw logs sent to AI</span>
-        <span>Examples redacted</span>
-        <span>Human applies</span>
+        <span><b>read only</b> · no production changes</span>
+        <span>no raw telemetry sent to AI</span>
+        <span>examples redacted</span>
+        <span>you apply the draft</span>
       </footer>
     </main>
 
