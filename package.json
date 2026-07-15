@@ -1,0 +1,49 @@
+{
+  "name": "telemetry-diet",
+  "version": "0.1.0",
+  "description": "MCP-first policy testbench for noisy, risky, and high-cardinality logs",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/last9/telemetry-diet.git"
+  },
+  "homepage": "https://github.com/last9/telemetry-diet#readme",
+  "bugs": {
+    "url": "https://github.com/last9/telemetry-diet/issues"
+  },
+  "type": "module",
+  "bin": {
+    "telemetry-diet": "bin/telemetry-diet.js",
+    "telemetry-diet-sample-mcp": "bin/sample-mcp.js"
+  },
+  "files": [
+    "bin",
+    "src",
+    "web",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "scripts": {
+    "start": "node bin/telemetry-diet.js --no-open",
+    "dev": "node --watch bin/telemetry-diet.js --no-open",
+    "sample:mcp": "node bin/sample-mcp.js",
+    "test": "node --test",
+    "check": "node --check bin/telemetry-diet.js && node --check bin/sample-mcp.js && node --check src/server.js && node --check web/app.js",
+    "pack:check": "npm pack --dry-run"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "mcp",
+    "observability",
+    "opentelemetry",
+    "logs",
+    "datadog",
+    "last9"
+  ],
+  "license": "Apache-2.0",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.29.0"
+  }
+}

@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Telemetry Diet is a local MCP-first policy testbench for noisy and risky logs.">
+    <title>Telemetry Diet</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+    <main id="connect-view" class="connect-view">
+      <header class="connect-header">
+        <div class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></div>
+        <div class="brand-name">Telemetry Diet</div>
+        <div class="local-badge"><span></span> Local workbench</div>
+      </header>
+
+      <section class="connect-main" aria-labelledby="connect-title">
+        <div class="intro-copy">
+          <p class="eyebrow">READ-ONLY MCP POLICY TESTBENCH</p>
+          <h1 id="connect-title">Telemetry Diet</h1>
+          <p class="lede">Find noisy, risky logs before they hit your observability bill.</p>
+          <p class="intro-detail">Choose a source. Telemetry stays between this local process and your configured MCP server.</p>
+        </div>
+
+        <div class="source-actions" aria-label="Observability source">
+          <button class="source-button sample" data-provider="sample">
+            <span class="source-icon" aria-hidden="true">S</span>
+            <span><strong>Connect sample MCP</strong><small>No credentials · bundled data</small></span>
+            <span class="arrow" aria-hidden="true">→</span>
+          </button>
+          <button class="source-button" data-provider="datadog">
+            <span class="source-icon datadog" aria-hidden="true">D</span>
+            <span><strong>Log in with Datadog</strong><small>Your Datadog RBAC · read-only</small></span>
+            <span class="arrow" aria-hidden="true">→</span>
+          </button>
+          <button class="source-button" data-provider="last9">
+            <span class="source-icon last9" aria-hidden="true">L9</span>
+            <span><strong>Log in with Last9</strong><small>Provider OAuth · read-only</small></span>
+            <span class="arrow" aria-hidden="true">→</span>
+          </button>
+        </div>
+      </section>
+
+      <section class="sample-result" aria-labelledby="sample-result-title">
+        <div class="sample-heading">
+          <p class="eyebrow">SAMPLE RESULT</p>
+          <h2 id="sample-result-title">checkout-api · production</h2>
+        </div>
+        <div class="sample-metrics">
+          <div><strong>2,000</strong><span>logs analyzed</span></div>
+          <div class="metric-coral"><strong>38%</strong><span>likely noise</span></div>
+          <div class="metric-red"><strong>3</strong><span>risky fields found</span></div>
+          <div class="metric-blue"><strong>2</strong><span>high-cardinality fields flagged</span></div>
+        </div>
+        <div class="ready-list">
+          <span><b>✓</b> OTel Collector config ready</span>
+          <span><b>✓</b> Last9 draft ready</span>
+        </div>
+      </section>
+
+      <footer class="trust-strip">
+        <span><b>READ ONLY</b> No production changes</span>
+        <span>No raw logs sent to AI</span>
+        <span>Examples redacted</span>
+        <span>Human applies</span>
+      </footer>
+    </main>
+
+    <main id="workbench-view" class="workbench-view" hidden>
+      <header class="app-header">
+        <div class="app-brand"><div class="brand-mark small" aria-hidden="true"><span></span><span></span><span></span></div><strong>Telemetry Diet</strong></div>
+        <div class="header-context"><span id="provider-label">Sample MCP</span><span class="readonly-pill"><i></i> READ ONLY</span></div>
+        <button id="change-source" class="quiet-button">Change source</button>
+      </header>
+
+      <div class="workbench-shell">
+        <aside class="control-panel" aria-label="Analysis controls">
+          <div class="step-label"><span>1</span> SCOPE</div>
+          <label>Provider<input id="provider-input" type="text" value="Sample MCP" disabled></label>
+          <label>Service<select id="service-select"></select></label>
+          <label>Environment / tag filter<select id="environment-select"></select></label>
+          <label>Time window<select id="window-select"><option value="1">Last 1 hour</option><option value="6" selected>Last 6 hours</option><option value="24">Last 24 hours</option><option value="168">Last 7 days</option></select></label>
+          <label>Signal<span class="segmented"><button type="button" class="active">Logs</button><button type="button" disabled>Traces</button><button type="button" disabled>Metrics</button></span></label>
+          <button id="analyze-button" class="primary-button"><span aria-hidden="true">▶</span> Analyze selected window</button>
+          <div class="connection-detail"><span class="status-dot"></span><div><strong id="connection-name">Sample MCP connected</strong><small id="connection-tools">Read-only tool session</small></div></div>
+          <div class="boundary-note"><strong>Trust boundary</strong><p>AI explains. Analyzer proves. Human applies.</p></div>
+        </aside>
+
+        <section class="results-panel">
+          <div id="empty-state" class="empty-state">
+            <div class="scan-graphic" aria-hidden="true"><span></span><span></span><span></span><i></i></div>
+            <h2>Ready to inspect logs</h2>
+            <p>Choose a scope and run a deterministic analysis. Summaries are fetched before any redacted examples.</p>
+          </div>
+
+          <div id="loading-state" class="loading-state" hidden>
+            <div class="loader"></div><h2>Analyzing selected window</h2><p id="loading-copy">Fetching provider summaries…</p>
+          </div>
+
+          <div id="analysis-results" hidden>
+            <div class="results-heading">
+              <div><p class="eyebrow">DETERMINISTIC ANALYSIS</p><h1 id="results-title">checkout-api</h1><p id="results-scope"></p></div>
+              <div class="analysis-total"><strong id="records-total">0</strong><span>records analyzed</span></div>
+            </div>
+
+            <div class="summary-band">
+              <div><span class="summary-symbol noise">↓</span><p><strong id="noise-summary">0%</strong><small>sample noise impact</small></p></div>
+              <div><span class="summary-symbol risk">!</span><p><strong id="risk-summary">0</strong><small>risky fields</small></p></div>
+              <div><span class="summary-symbol cardinality">#</span><p><strong id="cardinality-summary">0</strong><small>cardinality flags</small></p></div>
+              <div><span class="summary-symbol drift">↔</span><p><strong id="drift-summary">0</strong><small>naming drift</small></p></div>
+            </div>
+
+            <div class="analysis-grid">
+              <section class="findings-column" aria-labelledby="findings-title">
+                <div class="section-heading"><div><p class="eyebrow">SUGGESTED POLICY</p><h2 id="findings-title">Findings</h2></div><span id="finding-count">0 findings</span></div>
+                <div id="findings-list" class="findings-list"></div>
+              </section>
+
+              <aside class="preview-column" aria-label="Policy preview and exports">
+                <section class="impact-panel">
+                  <div class="section-heading"><div><p class="eyebrow">BEFORE / AFTER</p><h2>Sample impact</h2></div><span class="directional">DIRECTIONAL</span></div>
+                  <div class="impact-numbers"><div><span>BEFORE</span><strong id="before-count">0</strong></div><div class="impact-arrow">→</div><div><span>AFTER</span><strong id="after-count">0</strong></div></div>
+                  <div class="impact-track"><span id="impact-retained"></span><i id="impact-removed"></i></div>
+                  <div class="impact-legend"><span><i class="retained"></i>Retained</span><span><i class="removed"></i>Affected</span><strong id="reduction-percent">0%</strong></div>
+                  <p id="preview-caveat" class="caveat"></p>
+                </section>
+
+                <section class="output-panel">
+                  <div class="output-heading"><div><p class="eyebrow">GENERATED OUTPUT</p><h2>Visible drafts</h2></div><div class="output-actions"><button id="copy-output" title="Copy current output" aria-label="Copy current output">⧉</button><button id="download-output" title="Download current output" aria-label="Download current output">↓</button></div></div>
+                  <div class="output-tabs" role="tablist"><button class="active" data-output="otel" role="tab">OTel / OTTL</button><button data-output="last9" role="tab">Last9 JSON</button><button data-output="markdown" role="tab">Report</button></div>
+                  <pre><code id="output-code"></code></pre>
+                  <div class="draft-warning"><span>!</span><p><strong>Draft only</strong> Review and test before deployment. Nothing is applied.</p></div>
+                </section>
+              </aside>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
