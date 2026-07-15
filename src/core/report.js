@@ -66,6 +66,8 @@ export function generateMarkdownReport(summary, findings, selectedFindings, otel
     '',
     '## Risks and caveats',
     '',
+    ...((summary.limitations || []).map((limitation) =>
+      `- Provider limitation: ${typeof limitation === 'string' ? limitation : limitation?.message || JSON.stringify(limitation)}`)),
     '- This is a deterministic sample/window analysis, not an exact savings estimate.',
     '- Generated rules are visible drafts and are never auto-applied.',
     '- Review routing, retention, incident-response, and compliance requirements before changing production.',

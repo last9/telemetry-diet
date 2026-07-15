@@ -3,6 +3,8 @@ const state = {
   signal: 'logs',
   analysisId: null,
   findings: [],
+  selected: new Set(),
+  filter: 'all',
   artifacts: null,
   output: 'otel',
   signalArtifacts: null,
@@ -10,10 +12,35 @@ const state = {
   config: null,
 };
 
+// Logs review-queue: each finding is a proposed change led by a verb derived
+// from finding.action. Colour is meaning, not decoration — amber = volume,
+// rose = privacy; the rest stay neutral.
+const verbLabels = { drop: 'Drop', sample: 'Sample', redact: 'Redact', 'remove-label': 'Un-index', normalize: 'Normalize', review: 'Review' };
+const verbClasses = { drop: 'v-drop', sample: 'v-sample', redact: 'v-redact', 'remove-label': 'v-unindex', normalize: 'v-normalize', review: 'v-review' };
+const configGroups = [
+  ['drop', 'Drop noisy logs'],
+  ['sample', 'Sample noisy logs'],
+  ['redact', 'Redact sensitive attributes'],
+  ['remove-label', 'Un-index high-cardinality'],
+  ['normalize', 'Normalize naming'],
+  ['review', 'Flagged for review'],
+];
+// Keep these aligned with the rule kinds emitted by src/core/policy.js.
+const emittedRuleKinds = {
+  otel: new Set(['health-check', 'severity', 'redact-attribute', 'normalize-resource']),
+  last9: new Set(['health-check', 'severity', 'redact-attribute']),
+};
+const copyLabels = { otel: 'Copy OTel config', last9: 'Copy Last9 config', markdown: 'Copy report' };
+const BASELINE_KEY = 'telemetry-diet.baseline';
+
 let analysisGeneration = 0;
 let analysisInFlight = false;
 let routeGeneration = 0;
 let generationTimer;
+let regenToken = 0;
+let changeSeq = 0; // source of DOM-safe ids for change detail panels
+let analysisAbort = null; // AbortController for the in-flight /api/analyze
+let draftBusy = false;
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -63,28 +90,39 @@ function isProviderRoute(provider) {
   return window.location.pathname !== '/' && routeParams().get('provider') === provider;
 }
 
+function closeDraftModal() {
+  const modal = $('#draft-modal');
+  if (modal?.open) modal.close();
+}
+
 function syncScopeRoute() {
   if (!state.provider || window.location.pathname === '/') return;
+  if (analysisInFlight) cancelPendingAnalysis(); // changing scope abandons the running analysis
+  cancelRegeneration();
+  closeDraftModal();
   routeGeneration += 1;
   if (window.location.pathname.startsWith('/results/')) {
     state.analysisId = null;
     state.findings = [];
+    state.selected = new Set();
     state.artifacts = null;
     state.signalArtifacts = null;
     $('#analysis-results').hidden = true;
     $('#signal-results').hidden = true;
     $('#empty-state').hidden = false;
+    syncDraftActions();
     navigate(scopeRoute('/workbench'));
     return;
   }
   navigate(scopeRoute('/workbench'), { replace: true });
 }
 
-async function api(path, payload) {
+async function api(path, payload, { signal } = {}) {
   const response = await fetch(path, {
     method: payload ? 'POST' : 'GET',
     headers: payload ? { 'content-type': 'application/json' } : {},
     body: payload ? JSON.stringify(payload) : undefined,
+    signal,
   });
   const data = await response.json();
   if (!response.ok) throw new Error(data.error || `Request failed (${response.status})`);
@@ -161,19 +199,29 @@ function syncSignalControls() {
   $('#loading-title').textContent = copy.loading;
   $$('[data-signal]').forEach((button) => {
     button.disabled = analysisInFlight || (state.provider === 'datadog' && button.dataset.signal !== 'logs');
-    button.classList.toggle('active', button.dataset.signal === state.signal);
+    const active = button.dataset.signal === state.signal;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', String(active));
   });
 }
 
 function cancelPendingAnalysis() {
   analysisGeneration += 1;
   analysisInFlight = false;
+  if (analysisAbort) { analysisAbort.abort(); analysisAbort = null; } // stop the network request
   $('#analyze-button').disabled = false;
+  if (!$('#loading-state').hidden) { // reset the loader back to the ready state
+    $('#loading-state').hidden = true;
+    $('#empty-state').hidden = false;
+  }
+  syncSignalControls();
 }
 
 function cancelRegeneration() {
   clearTimeout(generationTimer);
   generationTimer = undefined;
+  regenToken += 1;     // supersede any scheduled or in-flight generation
+  setDraftBusy(false); // never leave Copy/Download stuck disabled after a cancel
 }
 
 function selectSignal(signal) {
@@ -184,13 +232,16 @@ function selectSignal(signal) {
   state.signal = signal;
   state.analysisId = null;
   state.findings = [];
+  state.selected = new Set();
   state.artifacts = null;
   state.signalArtifacts = null;
+  closeDraftModal();
   $('#analysis-results').hidden = true;
   $('#signal-results').hidden = true;
   $('#loading-state').hidden = true;
   $('#empty-state').hidden = false;
   syncSignalControls();
+  syncDraftActions();
   syncScopeRoute();
 }
 
@@ -265,8 +316,13 @@ async function connectFromButton(button) {
 }
 
 async function updateEnvironments() {
+  if (analysisInFlight) cancelPendingAnalysis(); // changing service abandons the running analysis
+  const provider = state.provider;
+  const requestedService = $('#service-select').value;
+  syncScopeRoute(); // invalidate the current result before environment discovery completes
   try {
-    const { environments } = await api('/api/environments', { provider: state.provider, service: $('#service-select').value });
+    const { environments } = await api('/api/environments', { provider, service: requestedService });
+    if (state.provider !== provider || $('#service-select').value !== requestedService) return;
     setOptions($('#environment-select'), environments, 'All environments');
     syncScopeRoute();
   } catch (error) {
@@ -284,65 +340,268 @@ function formatNumber(value) {
   return new Intl.NumberFormat().format(value || 0);
 }
 
-function renderFindings(selectedIds) {
-  const list = $('#findings-list');
-  list.replaceChildren();
-  state.findings.forEach((finding) => {
-    const item = document.createElement('article');
-    item.className = 'finding';
-    item.dataset.category = finding.category;
+function changeImpact(finding) {
+  if (finding.action === 'drop') return { text: `−${formatNumber(finding.affectedCount)} events`, cls: 'vol' };
+  if (finding.action === 'sample') return { text: `sample ${formatNumber(finding.affectedCount)}`, cls: 'vol' };
+  if (finding.action === 'redact') return { text: 'sensitive', cls: 'risk' };
+  if (finding.action === 'remove-label') return { text: 'high cardinality', cls: '' };
+  if (finding.action === 'normalize') return { text: 'schema drift', cls: '' };
+  return { text: 'review', cls: '' };
+}
 
-    const icon = document.createElement('span');
-    icon.className = 'finding-icon';
-    icon.textContent = categorySymbols[finding.category] || '?';
+function evidenceLabel(finding) {
+  const examples = finding.examplesRedacted || [];
+  if (!examples.length) return `No examples returned — ${formatNumber(finding.affectedCount)} records affected`;
+  if (finding.category === 'cardinality') return `Field values · redacted — ${formatNumber(finding.affectedCount)} records`;
+  if (finding.category === 'drift') return `Conflicting fields — ${formatNumber(finding.affectedCount)} affected`;
+  return `Matched log lines · redacted — ${examples.length} of ${formatNumber(finding.affectedCount)}`;
+}
 
-    const copy = document.createElement('div');
-    copy.className = 'finding-copy';
-    const titleLine = document.createElement('div');
-    titleLine.className = 'finding-title-line';
-    const title = document.createElement('strong');
-    title.textContent = finding.title;
-    const confidence = document.createElement('span');
-    confidence.className = 'confidence';
-    confidence.textContent = `${finding.confidence} confidence`;
-    titleLine.append(title, confidence);
-    const action = document.createElement('p');
-    action.textContent = finding.suggestedAction;
-    const examples = document.createElement('p');
-    examples.className = 'finding-examples';
-    examples.title = finding.examplesRedacted.join(' · ');
-    examples.textContent = finding.examplesRedacted.join(' · ') || finding.warning;
-    const affected = document.createElement('span');
-    affected.className = 'affected';
-    affected.textContent = `${formatNumber(finding.affectedCount)} records affected in selected window`;
-    copy.append(titleLine, action, examples, affected);
+// One proposed-change row: verb · title · impact · include/skip, with a
+// click-to-expand panel showing the plain-language why and the provider's
+// verbatim redacted samples (no client-side reformatting).
+function renderChange(finding) {
+  const on = state.selected.has(finding.id);
+  const article = document.createElement('article');
+  article.className = `change${on ? '' : ' skip'}`;
+  article.dataset.action = finding.action;
+  article.dataset.category = finding.category;
 
-    const toggle = document.createElement('label');
-    toggle.className = 'policy-toggle';
-    toggle.title = `Include ${finding.title} in generated drafts`;
-    const input = document.createElement('input');
-    input.type = 'checkbox';
-    input.checked = selectedIds.includes(finding.id);
-    input.dataset.finding = finding.id;
-    input.setAttribute('aria-label', `Include ${finding.title} in generated policy`);
-    input.addEventListener('change', regenerate);
-    toggle.append(input, document.createElement('span'));
+  const row = document.createElement('div');
+  row.className = 'change-row';
 
-    item.append(icon, copy, toggle);
-    list.append(item);
+  // The row is not itself a control. A disclosure button (holding only
+  // non-interactive spans) reveals the evidence, and the Include button lives
+  // beside it — never nested inside another interactive element.
+  // finding.id contains provider-derived field names (spaces, dots, brackets),
+  // so derive the DOM id from a counter rather than interpolating it.
+  const detailId = `change-detail-${changeSeq += 1}`;
+  const disclosure = document.createElement('button');
+  disclosure.type = 'button';
+  disclosure.className = 'change-disclosure';
+  disclosure.setAttribute('aria-expanded', 'false');
+  disclosure.setAttribute('aria-controls', detailId);
+
+  const verb = document.createElement('span');
+  verb.className = `verb ${verbClasses[finding.action] || ''}`.trim();
+  verb.textContent = verbLabels[finding.action] || finding.action;
+
+  const title = document.createElement('span');
+  title.className = 'change-title';
+  title.textContent = finding.title;
+  title.title = finding.title;
+
+  const grow = document.createElement('span');
+  grow.className = 'change-grow';
+
+  const impact = changeImpact(finding);
+  const impactEl = document.createElement('span');
+  impactEl.className = `change-impact ${impact.cls}`.trim();
+  impactEl.textContent = impact.text;
+
+  const caret = document.createElement('span');
+  caret.className = 'caret';
+  caret.setAttribute('aria-hidden', 'true');
+  caret.textContent = '▾';
+
+  disclosure.append(verb, title, grow, impactEl, caret);
+
+  const include = document.createElement('button');
+  include.type = 'button';
+  include.className = `inc${on ? ' on' : ''}`;
+  include.setAttribute('aria-pressed', String(on));
+  include.setAttribute('aria-label', `${on ? 'Remove' : 'Add'} ${finding.title} ${on ? 'from' : 'to'} config`);
+  include.textContent = on ? '✓ In config' : '+ Add';
+  // Update via closure references — never re-select this row by finding.id.
+  include.addEventListener('click', () => {
+    const nowOn = !state.selected.has(finding.id);
+    if (nowOn) state.selected.add(finding.id); else state.selected.delete(finding.id);
+    article.classList.toggle('skip', !nowOn);
+    include.classList.toggle('on', nowOn);
+    include.setAttribute('aria-pressed', String(nowOn));
+    include.textContent = nowOn ? '✓ In config' : '+ Add';
+    regenerate();
+  });
+
+  row.append(disclosure, include);
+
+  const detail = document.createElement('div');
+  detail.className = 'change-detail';
+  detail.id = detailId;
+  detail.hidden = true;
+  const why = document.createElement('p');
+  why.className = 'why';
+  const conf = document.createElement('span');
+  conf.className = 'conf';
+  conf.textContent = `${finding.confidence} confidence`;
+  why.append(conf, document.createTextNode(finding.suggestedAction || 'Manual review recommended.'));
+  const evLabel = document.createElement('div');
+  evLabel.className = 'ev-label';
+  evLabel.textContent = evidenceLabel(finding);
+  detail.append(why, evLabel);
+
+  const examples = finding.examplesRedacted || [];
+  if (examples.length) {
+    const samples = document.createElement('div');
+    samples.className = 'samples';
+    examples.forEach((line) => {
+      const sline = document.createElement('div');
+      sline.className = 'sline';
+      sline.textContent = line;
+      samples.append(sline);
+    });
+    detail.append(samples);
+  } else {
+    const note = document.createElement('p');
+    note.className = 'ev-note';
+    note.textContent = 'The provider returned no redacted examples for this finding in the selected window. The analyzer may have used field names, aggregate values, or statistical evidence.';
+    detail.append(note);
+  }
+
+  if (finding.warning) {
+    const warning = document.createElement('p');
+    warning.className = 'finding-warning';
+    warning.textContent = `Limitation: ${finding.warning}`;
+    detail.append(warning);
+  }
+
+  disclosure.addEventListener('click', () => {
+    const open = detail.hidden;
+    detail.hidden = !open;
+    disclosure.setAttribute('aria-expanded', String(open));
+    article.classList.toggle('open', open);
+  });
+
+  article.append(row, detail);
+  return article;
+}
+
+const filterLabels = { all: 'All', noise: 'Volume', risk: 'Privacy', cardinality: 'Cardinality', drift: 'Naming' };
+
+// Category chips summarise the mix and filter the list. Counts come from the
+// findings; chips for absent categories are hidden.
+function applyChangeFilter() {
+  const counts = {};
+  state.findings.forEach((finding) => { counts[finding.category] = (counts[finding.category] || 0) + 1; });
+  $$('#change-filters .chip').forEach((chip) => {
+    const key = chip.dataset.filter;
+    const count = key === 'all' ? state.findings.length : (counts[key] || 0);
+    chip.hidden = key !== 'all' && count === 0;
+    const active = state.filter === key;
+    chip.classList.toggle('active', active);
+    chip.setAttribute('aria-pressed', String(active));
+    chip.replaceChildren(document.createTextNode(`${filterLabels[key] || key} `));
+    const n = document.createElement('span');
+    n.className = 'n';
+    n.textContent = String(count);
+    chip.append(n);
+  });
+  $$('#findings-list .change').forEach((row) => {
+    row.hidden = state.filter !== 'all' && row.dataset.category !== state.filter;
   });
 }
 
-function renderPreview() {
+function renderChanges() {
+  const list = $('#findings-list');
+  list.replaceChildren(...state.findings.map(renderChange));
+  applyChangeFilter();
+}
+
+// Toggle a change in place (preserves any expanded rows) and re-derive the
+// config + savings from the server.
+function readBaseline() {
+  let stored = {};
+  try { stored = JSON.parse(localStorage.getItem(BASELINE_KEY) || '{}'); } catch { stored = {}; }
+  const gb = Number(stored.gb);
+  const cost = Number(stored.cost);
+  return { gb: Number.isFinite(gb) && gb >= 0 ? gb : 40, cost: Number.isFinite(cost) && cost >= 0 ? cost : 0.5 };
+}
+
+function formatGb(gb) { return gb >= 100 ? `${Math.round(gb)} GB` : `${gb.toFixed(1)} GB`; }
+function formatMoney(value) { return value >= 1000 ? `$${(value / 1000).toFixed(1)}k` : `$${Math.round(value)}`; }
+
+// Savings are honest: the volume % comes from the server preview; GB/$ are that
+// percentage applied to a baseline the user sets, always flagged directional.
+function renderSavings() {
   const preview = state.artifacts.preview;
-  $('#before-count').textContent = formatNumber(preview.recordsAnalyzed);
-  $('#after-count').textContent = formatNumber(preview.recordsAfter);
-  $('#reduction-percent').textContent = `${preview.directionalReductionPercent}% affected`;
-  $('#preview-caveat').textContent = preview.caveat;
-  const retained = preview.recordsAnalyzed ? (preview.recordsAfter / preview.recordsAnalyzed) * 100 : 100;
-  $('#impact-retained').style.width = `${retained}%`;
-  $('#impact-removed').style.width = `${100 - retained}%`;
-  $('#noise-summary').textContent = `${preview.directionalReductionPercent}%`;
+  const pct = preview.directionalReductionPercent || 0;
+  const baseline = readBaseline();
+  const events = preview.recordsAffected || 0;
+  const sensitive = (preview.redactedFields || []).length;
+  $('#reduction-percent').textContent = `−${pct}%`;
+  if (pct > 0 && baseline.gb > 0) {
+    const gbSaved = baseline.gb * pct / 100;
+    $('#savings-data').textContent = `≈${formatGb(gbSaved)}`;
+    $('#savings-cost').textContent = `≈${formatMoney(gbSaved * 30 * baseline.cost)}`;
+  } else {
+    $('#savings-data').textContent = '—';
+    $('#savings-cost').textContent = '—';
+  }
+  const bits = [];
+  if (events) bits.push(`≈${formatNumber(events)} records affected / window`);
+  if (sensitive) bits.push(`${sensitive} sensitive attribute${sensitive > 1 ? 's' : ''} redacted`);
+  bits.push(`assumes ${baseline.gb} GB/day ingest, uniform event size`);
+  // Keep the analyzer's own caveat — e.g. that overlapping drop categories make
+  // the reduction an upper bound — rather than silently dropping it.
+  const notes = [`Directional. ${bits.join(' · ')}. Nothing is applied.`];
+  if (preview.caveat) notes.push(preview.caveat);
+  $('#preview-caveat').textContent = notes.join(' ');
+  // The volume % only reflects dropped events; surface the other effects so the
+  // savings card responds to every toggle (redact/un-index/rename/sample).
+  const effects = { sample: 0, redact: 0, 'remove-label': 0, normalize: 0 };
+  state.findings.forEach((finding) => {
+    if (state.selected.has(finding.id) && effects[finding.action] !== undefined) effects[finding.action] += 1;
+  });
+  const effectText = [
+    effects.sample && `${effects.sample} sampled`,
+    effects.redact && `${effects.redact} sensitive redacted`,
+    effects['remove-label'] && `${effects['remove-label']} un-indexed`,
+    effects.normalize && `${effects.normalize} renamed`,
+  ].filter(Boolean);
+  $('#sv-effects').textContent = effectText.length ? `Also: ${effectText.join(' · ')}.` : '';
+  renderConfigBreakdown();
+}
+
+function renderConfigBreakdown() {
+  const selected = state.findings.filter((finding) => state.selected.has(finding.id));
+  const groups = {};
+  selected.forEach((finding) => {
+    const group = groups[finding.action] || { selected: 0, emitted: 0 };
+    group.selected += 1;
+    if (state.output === 'markdown' || emittedRuleKinds[state.output]?.has(finding.rule?.kind)) group.emitted += 1;
+    groups[finding.action] = group;
+  });
+  const total = selected.length;
+  const emitted = Object.values(groups).reduce((sum, group) => sum + group.emitted, 0);
+  const reportOnly = total - emitted;
+  $('.cfg-head h2').textContent = state.output === 'markdown' ? 'Your report' : 'Your config';
+  $('#cfg-count').textContent = state.output === 'markdown'
+    ? `${total} documented`
+    : `${emitted} emitted${reportOnly ? ` · ${reportOnly} report-only` : ''}`;
+  $('#finding-count').textContent = `${state.findings.length} · ${total} selected`;
+  const box = $('#cfg-breakdown');
+  box.replaceChildren();
+  const rows = configGroups.filter(([action]) => groups[action]);
+  if (!rows.length) {
+    const empty = document.createElement('div');
+    empty.className = 'br empty';
+    empty.append(Object.assign(document.createElement('span'), { textContent: 'Nothing included yet' }));
+    empty.append(Object.assign(document.createElement('b'), { textContent: '0' }));
+    box.append(empty);
+  } else {
+    rows.forEach(([action, label]) => {
+      const group = groups[action];
+      const br = document.createElement('div');
+      br.className = 'br';
+      const support = state.output === 'markdown' || group.emitted === group.selected
+        ? ''
+        : group.emitted === 0 ? ' · report only' : ` · ${group.emitted} emitted`;
+      br.append(Object.assign(document.createElement('span'), { textContent: `${label}${support}` }));
+      br.append(Object.assign(document.createElement('b'), { textContent: String(group.selected) }));
+      box.append(br);
+    });
+  }
+  syncDraftActions();
 }
 
 function currentOutput() {
@@ -350,26 +609,85 @@ function currentOutput() {
   return state.output === 'last9' ? JSON.stringify(value, null, 2) : value || '';
 }
 
+function draftActionsReady() {
+  if (!state.artifacts) return false;
+  if (state.selected.size > 0) return true;
+  return state.findings.length === 0 && state.output === 'markdown' && Boolean(state.artifacts.markdown);
+}
+
+function syncDraftActions() {
+  const disabled = draftBusy || !draftActionsReady();
+  for (const selector of ['#copy-output', '#download-output', '#toggle-config', '#modal-copy', '#modal-download']) {
+    $(selector).disabled = disabled;
+  }
+  $('#analysis-empty-report').disabled = draftBusy || !state.artifacts?.markdown;
+}
+
 function renderOutput() {
   $('#output-code').textContent = currentOutput();
-  $$('.output-tabs button').forEach((button) => button.classList.toggle('active', button.dataset.output === state.output));
+  $$('.fmt button').forEach((button) => {
+    const active = button.dataset.output === state.output;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-selected', String(active));
+  });
+  $('#copy-output').textContent = copyLabels[state.output] || 'Copy config';
+  renderConfigBreakdown();
+}
+
+function renderLogLimitations(summary, countReported) {
+  const limitations = [...(summary.limitations || [])].map((value) =>
+    typeof value === 'string' ? value : value?.message || JSON.stringify(value));
+  if (!countReported) limitations.unshift('The provider did not report the analyzed record count.');
+  const panel = $('#log-limitations');
+  const list = $('#log-limitations-list');
+  list.replaceChildren();
+  limitations.forEach((limitation) => {
+    const item = document.createElement('li');
+    item.textContent = limitation;
+    list.append(item);
+  });
+  panel.hidden = limitations.length === 0;
+  return limitations;
 }
 
 function renderAnalysis(data) {
   state.analysisId = data.analysisId;
   state.findings = data.findings;
   state.artifacts = data.artifacts;
-  const { summary, findings, artifacts } = data;
+  state.selected = new Set(data.artifacts.selectedIds); // smart defaults come from the server
+  state.filter = 'all';
+  const { summary } = data;
   $('#results-title').textContent = summary.service || 'Selected service';
   $('#results-scope').textContent = `${summary.environment || 'all environments'} · ${new Date(summary.timeWindow.start).toLocaleString()} – ${new Date(summary.timeWindow.end).toLocaleString()}`;
-  $('#records-total').textContent = formatNumber(summary.recordsAnalyzed);
-  $('#risk-summary').textContent = findings.filter((finding) => finding.category === 'risk').length;
-  $('#cardinality-summary').textContent = findings.filter((finding) => finding.category === 'cardinality').length;
-  $('#drift-summary').textContent = findings.filter((finding) => finding.category === 'drift').length;
-  $('#finding-count').textContent = `${findings.length} findings`;
-  renderFindings(artifacts.selectedIds);
-  renderPreview();
+  const countReported = summary.recordsAnalyzed != null && Number.isFinite(Number(summary.recordsAnalyzed));
+  const recordsAnalyzed = countReported ? Number(summary.recordsAnalyzed) : null;
+  $('#records-total').textContent = countReported ? formatNumber(recordsAnalyzed) : '—';
+  $('#records-total-label').textContent = countReported ? 'events scanned' : 'count not reported';
+  const limitations = renderLogLimitations(summary, countReported);
+
+  // Distinguish "no logs in this window" from "logs found, nothing to change".
+  const hasChanges = state.findings.length > 0;
+  const service = summary.service || 'this service';
+  const emptyPanel = $('#analysis-empty');
+  emptyPanel.hidden = hasChanges;
+  $('.review-grid').hidden = !hasChanges;
+  if (!hasChanges) {
+    const noLogs = countReported && recordsAnalyzed === 0;
+    const limitedCoverage = !countReported || limitations.length > 0;
+    emptyPanel.classList.toggle('no-logs', noLogs);
+    $('#analysis-empty-title').textContent = noLogs ? 'No logs found' : limitedCoverage ? 'No changes proposed' : 'Nothing to trim';
+    $('#analysis-empty-copy').textContent = noLogs
+      ? `No logs came back for ${service} in this window. Try a wider time window or a different scope.`
+      : limitedCoverage
+        ? `No changes were proposed for ${service}, but provider coverage was limited. Review the caveats before treating this scope as clean.`
+        : `${service} produced no noisy or risky findings in this window.`;
+    state.output = 'markdown';
+  }
+
+  renderChanges();
+  renderSavings();
   renderOutput();
+  $('#empty-state').hidden = true;
   $('#loading-state').hidden = true;
   $('#analysis-results').hidden = false;
   revealWhenOutsideViewport($('#analysis-results'));
@@ -397,8 +715,11 @@ function renderSignalOutput() {
   entries.forEach(([name]) => {
     const button = document.createElement('button');
     button.type = 'button';
+    button.setAttribute('role', 'tab');
     button.dataset.signalOutput = name;
-    button.classList.toggle('active', name === state.signalOutput);
+    const active = name === state.signalOutput;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-selected', String(active));
     button.textContent = signalOutputMeta[name]?.label || name.toUpperCase();
     button.addEventListener('click', () => {
       state.signalOutput = name;
@@ -540,6 +861,8 @@ async function analyze() {
   const generation = ++analysisGeneration;
   const routeAtStart = routeGeneration;
   const button = $('#analyze-button');
+  const controller = new AbortController();
+  analysisAbort = controller;
   analysisInFlight = true;
   button.disabled = true;
   syncSignalControls();
@@ -563,14 +886,14 @@ async function analyze() {
       environment: $('#environment-select').value || undefined,
       timeWindow: timeWindow(),
       signal: requestedSignal,
-    });
+    }, { signal: controller.signal });
     if (generation !== analysisGeneration || routeAtStart !== routeGeneration || requestedSignal !== state.signal) return;
     if (requestedSignal === 'logs') renderAnalysis(data);
     else renderSignalAnalysis(data);
     routeGeneration += 1;
     navigate(scopeRoute(`/results/${data.analysisId}`));
   } catch (error) {
-    if (generation !== analysisGeneration || routeAtStart !== routeGeneration) return;
+    if (error.name === 'AbortError' || generation !== analysisGeneration || routeAtStart !== routeGeneration) return;
     $('#loading-state').hidden = true;
     $('#empty-state').hidden = false;
     toast(error.message);
@@ -578,10 +901,18 @@ async function analyze() {
     clearInterval(interval);
     if (generation === analysisGeneration) {
       analysisInFlight = false;
+      analysisAbort = null;
       button.disabled = false;
       syncSignalControls();
     }
   }
+}
+
+// The draft is only safe to copy/download once it matches the current
+// selection, so freeze those actions while a regeneration is in flight.
+function setDraftBusy(busy) {
+  draftBusy = busy;
+  syncDraftActions();
 }
 
 function regenerate() {
@@ -589,17 +920,27 @@ function regenerate() {
   const analysisId = state.analysisId;
   const signal = state.signal;
   if (signal !== 'logs' || !analysisId) return;
+  const token = ++regenToken; // only the newest request may commit its result
+  setDraftBusy(true);
   generationTimer = setTimeout(async () => {
     generationTimer = undefined;
-    if (state.signal !== signal || state.analysisId !== analysisId) return;
-    const selectedIds = $$('[data-finding]:checked').map((input) => input.dataset.finding);
+    if (token !== regenToken || state.signal !== signal || state.analysisId !== analysisId) return;
+    const selectedIds = [...state.selected];
     try {
       const { artifacts } = await api('/api/generate', { analysisId, selectedIds });
-      if (state.signal !== signal || state.analysisId !== analysisId) return;
+      if (token !== regenToken || state.signal !== signal || state.analysisId !== analysisId) return; // a newer toggle superseded this
       state.artifacts = artifacts;
-      renderPreview();
+      renderSavings();
       renderOutput();
+      setDraftBusy(false);
     } catch (error) {
+      if (token !== regenToken) return;
+      // Resync the toggles to the artifacts we still hold so the UI never shows
+      // "In config" rows paired with a draft that predates them.
+      state.selected = new Set(state.artifacts ? state.artifacts.selectedIds : []);
+      renderChanges();
+      renderConfigBreakdown();
+      setDraftBusy(false);
       toast(error.message);
     }
   }, 120);
@@ -613,19 +954,24 @@ function reset({ updateHistory = true } = {}) {
   state.signal = 'logs';
   state.analysisId = null;
   state.findings = [];
+  state.selected = new Set();
   state.artifacts = null;
   state.signalArtifacts = null;
+  closeDraftModal();
   $('#workbench-view').hidden = true;
   $('#connect-view').hidden = false;
   $('#analysis-results').hidden = true;
   $('#signal-results').hidden = true;
   $('#loading-state').hidden = true;
   $('#empty-state').hidden = false;
+  syncDraftActions();
   document.title = 'Telemetry Diet';
   if (updateHistory) navigate('/');
 }
 
 async function restoreRoute() {
+  if (analysisInFlight) cancelPendingAnalysis();
+  closeDraftModal();
   const generation = ++routeGeneration;
   const pathname = window.location.pathname;
   const isCurrent = () => generation === routeGeneration && window.location.pathname === pathname;
@@ -688,20 +1034,55 @@ $('#window-select').addEventListener('change', syncScopeRoute);
 $$('[data-signal]').forEach((button) => button.addEventListener('click', () => selectSignal(button.dataset.signal)));
 $('#analyze-button').addEventListener('click', analyze);
 $('#change-source').addEventListener('click', reset);
+$('#go-home').addEventListener('click', reset);
 window.addEventListener('popstate', restoreRoute);
-$$('.output-tabs button').forEach((button) => button.addEventListener('click', () => {
+$$('.fmt button').forEach((button) => button.addEventListener('click', () => {
   state.output = button.dataset.output;
   renderOutput();
 }));
-$('#copy-output').addEventListener('click', async () => {
+$$('#change-filters .chip').forEach((chip) => chip.addEventListener('click', () => {
+  state.filter = chip.dataset.filter;
+  applyChangeFilter();
+}));
+// View draft opens the full draft in a modal — a 300px config column is too
+// cramped to read YAML/JSON. <dialog> gives us backdrop + Esc for free.
+const draftModal = $('#draft-modal');
+function openDraft() {
+  if (!draftActionsReady() || draftBusy) return;
+  renderOutput();
+  if (typeof draftModal.showModal === 'function') draftModal.showModal();
+  $('#draft-modal-close').focus();
+}
+$('#toggle-config').addEventListener('click', openDraft);
+$('#analysis-empty-report').addEventListener('click', () => {
+  state.output = 'markdown';
+  openDraft();
+});
+$('#draft-modal-close').addEventListener('click', () => draftModal.close());
+draftModal.addEventListener('click', (event) => { if (event.target === draftModal) draftModal.close(); });
+(() => {
+  const baseline = readBaseline();
+  $('#ingest-gb').value = baseline.gb;
+  $('#cost-gb').value = baseline.cost;
+  const persist = () => {
+    const stored = { gb: Number($('#ingest-gb').value), cost: Number($('#cost-gb').value) };
+    try { localStorage.setItem(BASELINE_KEY, JSON.stringify(stored)); } catch { /* storage unavailable */ }
+    if (state.signal === 'logs' && state.artifacts) renderSavings();
+  };
+  $('#ingest-gb').addEventListener('input', persist);
+  $('#cost-gb').addEventListener('input', persist);
+})();
+async function copyDraft() {
+  if (draftBusy || !draftActionsReady()) return;
   try {
     await navigator.clipboard.writeText(currentOutput());
     toast('Current draft copied.', true);
   } catch {
     toast('Clipboard access is unavailable in this browser.');
   }
-});
-$('#download-output').addEventListener('click', () => {
+}
+function downloadDraft() {
+  if (draftBusy || !draftActionsReady()) return;
   const meta = outputMeta[state.output];
   const url = URL.createObjectURL(new Blob([currentOutput()], { type: meta.type }));
   const link = document.createElement('a');
@@ -709,7 +1090,11 @@ $('#download-output').addEventListener('click', () => {
   link.download = meta.filename;
   link.click();
   URL.revokeObjectURL(url);
-});
+}
+$('#copy-output').addEventListener('click', copyDraft);
+$('#download-output').addEventListener('click', downloadDraft);
+$('#modal-copy').addEventListener('click', copyDraft);
+$('#modal-download').addEventListener('click', downloadDraft);
 $('#copy-signal-output').addEventListener('click', async () => {
   try {
     await navigator.clipboard.writeText(currentSignalOutput());
