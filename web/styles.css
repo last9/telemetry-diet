@@ -211,8 +211,23 @@ button { cursor: pointer; }
 .cfg-actions { display: flex; gap: 8px; margin-top: 8px; }
 .cfg-actions button { flex: 1; height: 34px; border: 1px solid var(--edge); background: var(--panel-2); color: var(--muted); border-radius: 7px; font-size: 11.5px; }
 .cfg-actions button:hover { color: var(--ink); border-color: var(--faint); }
-.cfg-code { margin: 12px 0 0; padding: 12px; background: #0C1215; border: 1px solid var(--edge-soft); border-radius: 7px; overflow-x: auto; font-family: var(--mono); font-size: 11px; line-height: 1.7; color: #C4D2CC; }
 .cfg-cav { margin: 12px 0 0; font-size: 11px; color: var(--faint); line-height: 1.5; }
+
+/* View draft → modal popup (native <dialog>, gets backdrop + Esc for free) */
+.draft-modal { width: min(760px, 92vw); max-height: 82vh; padding: 0; border: 1px solid var(--edge); border-radius: 12px; background: var(--panel); color: var(--ink); box-shadow: 0 30px 80px -30px #000; }
+.draft-modal::backdrop { background: rgba(5, 8, 10, .66); }
+.draft-modal[open] { display: flex; flex-direction: column; }
+.draft-modal-head { display: flex; align-items: center; gap: 14px; padding: 14px 18px; border-bottom: 1px solid var(--edge); }
+.draft-modal-head h2 { margin: 0; font-size: 15px; }
+.draft-modal-head .fmt { margin: 0 0 0 auto; padding: 0; }
+.draft-modal-close { width: 30px; height: 30px; flex: none; border: 1px solid var(--edge); background: var(--panel-2); border-radius: 7px; color: var(--muted); font-size: 13px; }
+.draft-modal-close:hover { color: var(--ink); border-color: var(--faint); }
+.draft-modal-code { flex: 1; margin: 0; padding: 16px 18px; overflow: auto; background: #0C1215; }
+.draft-modal-code code { font-family: var(--mono); font-size: 12px; line-height: 1.7; color: #C4D2CC; white-space: pre; }
+.draft-modal-actions { display: flex; align-items: center; gap: 10px; padding: 12px 18px; border-top: 1px solid var(--edge); }
+.draft-modal-note { margin-right: auto; font-size: 11.5px; color: var(--faint); }
+.draft-modal-actions button { height: 34px; padding: 0 15px; border: 1px solid var(--edge); background: var(--panel-2); color: var(--muted); border-radius: 7px; font-size: 12px; }
+.draft-modal-actions button:hover { color: var(--ink); border-color: var(--faint); }
 
 /* ---------- shared signal views (traces / metrics) ---------- */
 .results-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 18px; }

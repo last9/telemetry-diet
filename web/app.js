@@ -864,14 +864,16 @@ $$('.fmt button').forEach((button) => button.addEventListener('click', () => {
   state.output = button.dataset.output;
   renderOutput();
 }));
+// View draft opens the full draft in a modal — a 300px config column is too
+// cramped to read YAML/JSON. <dialog> gives us backdrop + Esc for free.
+const draftModal = $('#draft-modal');
 $('#toggle-config').addEventListener('click', () => {
-  const pre = $('.cfg-code');
-  const willOpen = pre.hidden;
-  pre.hidden = !willOpen;
-  const button = $('#toggle-config');
-  button.setAttribute('aria-expanded', String(willOpen));
-  button.textContent = willOpen ? 'Hide draft' : 'View draft';
+  renderOutput();
+  if (typeof draftModal.showModal === 'function') draftModal.showModal();
+  $('#draft-modal-close').focus();
 });
+$('#draft-modal-close').addEventListener('click', () => draftModal.close());
+draftModal.addEventListener('click', (event) => { if (event.target === draftModal) draftModal.close(); });
 (() => {
   const baseline = readBaseline();
   $('#ingest-gb').value = baseline.gb;
@@ -884,15 +886,15 @@ $('#toggle-config').addEventListener('click', () => {
   $('#ingest-gb').addEventListener('input', persist);
   $('#cost-gb').addEventListener('input', persist);
 })();
-$('#copy-output').addEventListener('click', async () => {
+async function copyDraft() {
   try {
     await navigator.clipboard.writeText(currentOutput());
     toast('Current draft copied.', true);
   } catch {
     toast('Clipboard access is unavailable in this browser.');
   }
-});
-$('#download-output').addEventListener('click', () => {
+}
+function downloadDraft() {
   const meta = outputMeta[state.output];
   const url = URL.createObjectURL(new Blob([currentOutput()], { type: meta.type }));
   const link = document.createElement('a');
@@ -900,7 +902,11 @@ $('#download-output').addEventListener('click', () => {
   link.download = meta.filename;
   link.click();
   URL.revokeObjectURL(url);
-});
+}
+$('#copy-output').addEventListener('click', copyDraft);
+$('#download-output').addEventListener('click', downloadDraft);
+$('#modal-copy').addEventListener('click', copyDraft);
+$('#modal-download').addEventListener('click', downloadDraft);
 $('#copy-signal-output').addEventListener('click', async () => {
   try {
     await navigator.clipboard.writeText(currentSignalOutput());

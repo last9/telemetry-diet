@@ -138,9 +138,8 @@
                 <button id="copy-output" class="cfg-copy">Copy OTel config</button>
                 <div class="cfg-actions">
                   <button id="download-output">Download</button>
-                  <button id="toggle-config" aria-expanded="false">View draft</button>
+                  <button id="toggle-config">View draft</button>
                 </div>
-                <pre class="cfg-code" hidden><code id="output-code"></code></pre>
                 <p class="cfg-cav">A draft for you to review and apply. Telemetry Diet changes nothing in production.</p>
               </section>
             </aside>
@@ -184,6 +183,24 @@
           </div>
         </section>
     </main>
+
+    <dialog id="draft-modal" class="draft-modal" aria-labelledby="draft-modal-title">
+      <div class="draft-modal-head">
+        <h2 id="draft-modal-title">Generated draft</h2>
+        <div class="output-tabs fmt" role="tablist">
+          <button class="active" data-output="otel" role="tab">OTel</button>
+          <button data-output="last9" role="tab">Last9</button>
+          <button data-output="markdown" role="tab">Report</button>
+        </div>
+        <button id="draft-modal-close" class="draft-modal-close" aria-label="Close draft">✕</button>
+      </div>
+      <pre class="draft-modal-code"><code id="output-code"></code></pre>
+      <div class="draft-modal-actions">
+        <span class="draft-modal-note">Draft only — review and apply it yourself. Telemetry Diet changes nothing in production.</span>
+        <button id="modal-copy">Copy</button>
+        <button id="modal-download">Download</button>
+      </div>
+    </dialog>
 
     <script type="module" src="/app.js"></script>
   </body>
