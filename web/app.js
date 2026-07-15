@@ -25,6 +25,11 @@ const configGroups = [
   ['normalize', 'Normalize naming'],
   ['review', 'Flagged for review'],
 ];
+// Keep these aligned with the rule kinds emitted by src/core/policy.js.
+const emittedRuleKinds = {
+  otel: new Set(['health-check', 'severity', 'redact-attribute', 'normalize-resource']),
+  last9: new Set(['health-check', 'severity', 'redact-attribute']),
+};
 const copyLabels = { otel: 'Copy OTel config', last9: 'Copy Last9 config', markdown: 'Copy report' };
 const BASELINE_KEY = 'telemetry-diet.baseline';
 
@@ -93,6 +98,7 @@ function closeDraftModal() {
 function syncScopeRoute() {
   if (!state.provider || window.location.pathname === '/') return;
   if (analysisInFlight) cancelPendingAnalysis(); // changing scope abandons the running analysis
+  cancelRegeneration();
   closeDraftModal();
   routeGeneration += 1;
   if (window.location.pathname.startsWith('/results/')) {
@@ -104,6 +110,7 @@ function syncScopeRoute() {
     $('#analysis-results').hidden = true;
     $('#signal-results').hidden = true;
     $('#empty-state').hidden = false;
+    syncDraftActions();
     navigate(scopeRoute('/workbench'));
     return;
   }
@@ -310,8 +317,12 @@ async function connectFromButton(button) {
 
 async function updateEnvironments() {
   if (analysisInFlight) cancelPendingAnalysis(); // changing service abandons the running analysis
+  const provider = state.provider;
+  const requestedService = $('#service-select').value;
+  syncScopeRoute(); // invalidate the current result before environment discovery completes
   try {
-    const { environments } = await api('/api/environments', { provider: state.provider, service: $('#service-select').value });
+    const { environments } = await api('/api/environments', { provider, service: requestedService });
+    if (state.provider !== provider || $('#service-select').value !== requestedService) return;
     setOptions($('#environment-select'), environments, 'All environments');
     syncScopeRoute();
   } catch (error) {
@@ -552,16 +563,25 @@ function renderSavings() {
 }
 
 function renderConfigBreakdown() {
-  const counts = {};
-  state.findings.forEach((finding) => {
-    if (state.selected.has(finding.id)) counts[finding.action] = (counts[finding.action] || 0) + 1;
+  const selected = state.findings.filter((finding) => state.selected.has(finding.id));
+  const groups = {};
+  selected.forEach((finding) => {
+    const group = groups[finding.action] || { selected: 0, emitted: 0 };
+    group.selected += 1;
+    if (state.output === 'markdown' || emittedRuleKinds[state.output]?.has(finding.rule?.kind)) group.emitted += 1;
+    groups[finding.action] = group;
   });
-  const total = state.selected.size;
-  $('#cfg-count').textContent = `${total} change${total === 1 ? '' : 's'}`;
-  $('#finding-count').textContent = `${state.findings.length} · ${total} in config`;
+  const total = selected.length;
+  const emitted = Object.values(groups).reduce((sum, group) => sum + group.emitted, 0);
+  const reportOnly = total - emitted;
+  $('.cfg-head h2').textContent = state.output === 'markdown' ? 'Your report' : 'Your config';
+  $('#cfg-count').textContent = state.output === 'markdown'
+    ? `${total} documented`
+    : `${emitted} emitted${reportOnly ? ` · ${reportOnly} report-only` : ''}`;
+  $('#finding-count').textContent = `${state.findings.length} · ${total} selected`;
   const box = $('#cfg-breakdown');
   box.replaceChildren();
-  const rows = configGroups.filter(([action]) => counts[action]);
+  const rows = configGroups.filter(([action]) => groups[action]);
   if (!rows.length) {
     const empty = document.createElement('div');
     empty.className = 'br empty';
@@ -570,10 +590,14 @@ function renderConfigBreakdown() {
     box.append(empty);
   } else {
     rows.forEach(([action, label]) => {
+      const group = groups[action];
       const br = document.createElement('div');
       br.className = 'br';
-      br.append(Object.assign(document.createElement('span'), { textContent: label }));
-      br.append(Object.assign(document.createElement('b'), { textContent: String(counts[action]) }));
+      const support = state.output === 'markdown' || group.emitted === group.selected
+        ? ''
+        : group.emitted === 0 ? ' · report only' : ` · ${group.emitted} emitted`;
+      br.append(Object.assign(document.createElement('span'), { textContent: `${label}${support}` }));
+      br.append(Object.assign(document.createElement('b'), { textContent: String(group.selected) }));
       box.append(br);
     });
   }
@@ -607,7 +631,7 @@ function renderOutput() {
     button.setAttribute('aria-selected', String(active));
   });
   $('#copy-output').textContent = copyLabels[state.output] || 'Copy config';
-  syncDraftActions();
+  renderConfigBreakdown();
 }
 
 function renderLogLimitations(summary, countReported) {

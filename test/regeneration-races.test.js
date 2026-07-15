@@ -15,8 +15,8 @@ function analysisData(selectedIds) {
     analysisId,
     summary: { service: 'checkout-api', environment: 'production', recordsAnalyzed: 1000, timeWindow: { start: '2026-07-15T00:00:00Z', end: '2026-07-15T06:00:00Z' } },
     findings: [
-      { id: 'f1', category: 'risk', action: 'redact', title: 'Redact f1', confidence: 'high', affectedCount: 10, examplesRedacted: ['a***'], suggestedAction: 'redact f1', warning: '' },
-      { id: 'f2', category: 'noise', action: 'drop', title: 'Drop f2', confidence: 'high', affectedCount: 20, examplesRedacted: ['GET /x 200'], suggestedAction: 'drop f2', warning: '' },
+      { id: 'f1', category: 'risk', action: 'redact', title: 'Redact f1', confidence: 'high', affectedCount: 10, examplesRedacted: ['a***'], suggestedAction: 'redact f1', warning: '', rule: { kind: 'redact-attribute', field: 'user.email' } },
+      { id: 'f2', category: 'noise', action: 'drop', title: 'Drop f2', confidence: 'high', affectedCount: 20, examplesRedacted: ['GET /x 200'], suggestedAction: 'drop f2', warning: '', rule: { kind: 'health-check', paths: ['/x'] } },
     ],
     artifacts: { selectedIds, preview: { directionalReductionPercent: 5, recordsAffected: 50, redactedFields: [], caveat: 'cav', recordsAnalyzed: 1000, recordsAfter: 950 }, otel: 'OTEL0', last9: {}, markdown: 'MD0' },
   };
@@ -159,6 +159,26 @@ test('switching signal mid-generation cancels it and leaves the stale log draft 
   assert.equal(h.query('#output-code').textContent, 'OTEL0', 'cancelled generation must not commit');
 });
 
+test('changing scope cancels generation and a later result can export normally', async () => {
+  const h = await boot(['f1']);
+  const [, incF2] = includeButtons(h);
+
+  incF2.dispatch('click'); flushTimers(h); await tick();
+  assert.equal(h.generateQueue.length, 1);
+  assert.equal(h.query('#download-output').disabled, true, 'Download disabled while pending');
+
+  h.query('#window-select').value = '24';
+  h.query('#window-select').dispatch('change');
+  assert.equal(h.query('#analysis-results').hidden, true, 'scope change clears the stale result');
+  assert.equal(h.query('#download-output').disabled, true, 'cleared result cannot export the old draft');
+
+  h.generateQueue[0].resolve({ artifacts: { ...analysisData([]).artifacts, otel: 'GEN_LATE' } }); await tick();
+  assert.notEqual(h.query('#output-code').textContent, 'GEN_LATE', 'late generation must not commit');
+
+  vm.runInContext(`renderAnalysis(${JSON.stringify(analysisData(['f1']))})`, h.context);
+  assert.equal(h.query('#download-output').disabled, false, 'a committed result re-enables draft export');
+});
+
 test('a failed generation rolls the selection back to the committed artifacts', async () => {
   const h = await boot(['f1']); // f1 starts in config
   const [incF1] = includeButtons(h);
@@ -202,6 +222,27 @@ test('zero baseline values are honored instead of replaced by defaults', async (
   h.query('#ingest-gb').dispatch('input');
   assert.equal(h.query('#savings-data').textContent, '—');
   assert.equal(h.query('#savings-cost').textContent, '—');
+});
+
+test('config breakdown distinguishes emitted changes from report-only recommendations', async () => {
+  const h = await boot(['f1']);
+  const sampleFinding = {
+    id: 'f3', category: 'noise', action: 'sample', title: 'Sample f3', confidence: 'medium', affectedCount: 50,
+    examplesRedacted: ['repeated'], suggestedAction: 'sample f3', warning: '', rule: { kind: 'fingerprint', fingerprint: 'repeated' },
+  };
+  const data = analysisData(['f1', 'f3']);
+  data.findings.push(sampleFinding);
+  data.artifacts.selectedIds = ['f1', 'f3'];
+  vm.runInContext(`renderAnalysis(${JSON.stringify(data)})`, h.context);
+
+  assert.equal(h.query('#finding-count').textContent, '3 · 2 selected');
+  assert.equal(h.query('#cfg-count').textContent, '1 emitted · 1 report-only');
+  const otelRows = h.registry.filter((el) => el.tagName === 'SPAN').map((el) => el.textContent);
+  assert.ok(otelRows.includes('Sample noisy logs · report only'));
+
+  vm.runInContext("state.output = 'markdown'; renderOutput()", h.context);
+  assert.equal(h.query('#cfg-count').textContent, '2 documented');
+  assert.equal(h.query('.cfg-head h2').textContent, 'Your report');
 });
 
 test('a limited zero-finding analysis stays neutral and keeps its report exportable', async () => {
