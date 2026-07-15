@@ -32,7 +32,7 @@
     "pack:check": "npm pack --dry-run"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=20"
   },
   "keywords": [
     "mcp",
@@ -48,6 +48,6 @@
   "license": "Apache-2.0",
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.29.0",
-    "@prometheus-io/lezer-promql": "^0.313.0"
+    "@prometheus-io/lezer-promql": "0.313.0"
   }
 }

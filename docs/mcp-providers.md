@@ -68,11 +68,15 @@ Metric usage inspects the MCP tool catalog and accepts only capabilities adverti
 - a metric-name inventory; and
 - at least one reference source covering native dashboards, embedded Grafana dashboards, alerts, or entity indicators.
 
+The official Last9 MCP path uses `prometheus_label_values` with `label: __name__` for inventory. Native dashboards are deliberately two-step: `list_dashboards` supplies bounded IDs and metadata, then `get_dashboard` reads each full definition so panel PromQL is actually scanned. Alert and KPI PromQL comes from the read-only `get_alert_config` response. `get_alerts` is not used for metric references because it reports currently firing alerts, not alert definitions.
+
 Each query is normalized with its source type, source ID, display path, and update timestamp when supplied. If inventory collection fails, no metric names are returned, or every reference scan fails, the analysis stops instead of producing an incomplete “unused” list.
 
 ### Trace Intelligence capabilities
 
 Trace Intelligence prefers a read-only aggregate trace analysis tool. When no aggregate tool exists, it accepts only a recognized trace-search tool with a limit argument and requests no more than 200 records. The fallback groups records locally and discards raw spans; it never returns attribute values, trace/span IDs, credentials, or upstream error payloads.
+
+The official Last9 fallback is `get_service_traces`. Its `SPAN_KIND_*` and `STATUS_CODE_*` values are normalized before analysis; exported trace IDs and span IDs are discarded. This fallback does not currently expose measured export bytes, instrumentation scope, or leaf/business-span evidence, so Telemetry Diet does not invent those fields or generate corresponding drop recommendations from that response alone.
 
 Aggregate responses may additionally provide `http_route`, `average_duration_ms`, and an explicit `fast_success_candidates.max_average_duration_ms` threshold. These fields enable guarded health-route and fast-success candidates without exposing raw traces. Missing byte or duration measurements remain unknown rather than being inferred. An unrecognized or unbounded tool contract fails closed.
 

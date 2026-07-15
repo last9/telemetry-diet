@@ -136,6 +136,71 @@ test('maps advertised inventory and per-entity indicator schemas without broaden
   ]);
 });
 
+test('follows the Last9 dashboard detail and alert config response contracts', async () => {
+  const tools = [
+    {
+      name: 'prometheus_label_values',
+      inputSchema: { required: ['match_query', 'label'], properties: { match_query: {}, label: {}, lookback_minutes: {} } },
+    },
+    { name: 'list_dashboards', inputSchema: { properties: {} } },
+    { name: 'get_dashboard', inputSchema: { required: ['id'], properties: { id: {}, region: {} } } },
+    { name: 'get_alert_config', inputSchema: { properties: { search_term: {}, rule_name: {} } } },
+    { name: 'get_alerts', inputSchema: { properties: {} } },
+  ];
+  const { calls, oauth } = fakeOAuthClient(tools, {
+    prometheus_label_values: ['http_requests_total', 'queue_depth'],
+    list_dashboards: [{ id: 'dashboard-1', name: 'Operations', metadata: { _type: 'metrics' } }],
+    get_dashboard: {
+      dashboard: {
+        id: 'dashboard-1', name: 'Operations',
+        panels: [{ name: 'Traffic', queries: [{ name: 'A', expr: 'sum(rate(http_requests_total[5m]))' }] }],
+      },
+    },
+    get_alert_config: {
+      text: [
+        'Found 1 alert rules:',
+        '',
+        'Alert Rule 1:',
+        '  ID: rule-1',
+        '  Rule Name: Queue depth high',
+        '  Indicators:',
+        '    queue (KPI ID: kpi-1)',
+        '      PromQL: max(queue_depth)',
+        '  Updated: 2026-07-14 12:00:00 UTC',
+      ].join('\n'),
+    },
+    get_alerts: new Error('firing alerts must not be queried for metric definitions'),
+  });
+  const adapter = new Last9MetricsAdapter(
+    { TELEMETRY_DIET_LAST9_ORG_SLUG: 'example-org' },
+    { oauth, now: () => new Date('2026-07-15T00:00:00Z') },
+  );
+
+  const connection = await adapter.connect();
+  const snapshot = await adapter.collect();
+
+  assert.deepEqual(connection.tools, [
+    'prometheus_label_values', 'list_dashboards', 'get_dashboard', 'get_alert_config',
+  ]);
+  assert.deepEqual(calls, [
+    { name: 'prometheus_label_values', args: { match_query: '{__name__!=""}', label: '__name__' } },
+    { name: 'list_dashboards', args: {} },
+    { name: 'get_dashboard', args: { id: 'dashboard-1' } },
+    { name: 'get_alert_config', args: {} },
+  ]);
+  assert.deepEqual(snapshot.references, [
+    {
+      kind: 'dashboard', sourceId: 'dashboard-1', sourceName: 'Operations > Traffic > A',
+      query: 'sum(rate(http_requests_total[5m]))', updatedAt: null,
+    },
+    {
+      kind: 'alert', sourceId: 'rule-1', sourceName: 'Queue depth high',
+      query: 'max(queue_depth)', updatedAt: '2026-07-14 12:00:00 UTC',
+    },
+  ]);
+  assert.ok(calls.every(({ name }) => name !== 'get_alerts'));
+});
+
 test('fails closed when inventory or every reference capability is unavailable', async () => {
   const withoutInventory = fakeOAuthClient([
     { name: 'delete_metric_names' },

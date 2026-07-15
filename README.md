@@ -12,7 +12,7 @@ Telemetry Diet is a local telemetry analysis workbench, not a dashboard or hoste
 npx telemetry-diet
 ```
 
-The command starts a local app on `127.0.0.1` and opens the workbench. Datadog and Last9 authentication happens on the providers' own consent pages; OAuth tokens are held in the local process and are not exposed to the browser app. Node.js 22 or newer is required.
+The command starts a local app on `127.0.0.1` and opens the workbench. Datadog and Last9 authentication happens on the providers' own consent pages; OAuth tokens are held in the local process and are not exposed to the browser app. Node.js 20 or newer is required.
 
 ## Run locally from source
 
@@ -137,7 +137,7 @@ See [provider setup](docs/mcp-providers.md) for transport and response-normaliza
 
 ## Metric usage
 
-Metric usage uses a PromQL syntax tree rather than regular expressions. It reports each metric as referenced in multiple scanned sources, referenced once, or unreferenced in the scanned sources. Protection policy is a separate flag; it never silently turns an unreferenced metric into a referenced one.
+Metric usage uses a PromQL syntax tree rather than regular expressions. It reports each metric as referenced by multiple scanned queries, referenced once, or unreferenced in the scanned sources. Protection policy is a separate flag; it never silently turns an unreferenced metric into a referenced one.
 
 The report is organization-wide and includes exact query provenance. It does not observe ad hoc queries or external consumers, so an unreferenced result is a review candidate, not proof that a metric is unused. See [metric usage](docs/metric-usage.md).
 

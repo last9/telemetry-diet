@@ -158,6 +158,59 @@ test('uses a bounded trace-search fallback and keeps unmeasured bytes unknown', 
   assert.doesNotMatch(JSON.stringify(input), /private-service-value|private-command-value|private-error-value|private-trace-id/);
 });
 
+test('normalizes the Last9 get_service_traces span kind and status constants', async () => {
+  const tools = [{
+    name: 'get_service_traces',
+    description: 'Read traces for a service',
+    inputSchema: {
+      required: ['service_name'],
+      properties: { service_name: {}, start_time_iso: {}, end_time_iso: {}, limit: {}, env: {} },
+    },
+  }];
+  const { calls, oauth } = fakeOAuthClient(tools, {
+    get_service_traces: {
+      data: [
+        {
+          trace_id: 'private-trace-1', span_id: 'private-span-1',
+          span_kind: 'SPAN_KIND_SERVER', span_name: 'GET /orders', status_code: 'STATUS_CODE_OK',
+        },
+        {
+          trace_id: 'private-trace-2', span_id: 'private-span-2',
+          span_kind: 'SPAN_KIND_CLIENT', span_name: 'postgres query', status_code: 'STATUS_CODE_ERROR',
+        },
+      ],
+      success: true,
+    },
+  });
+  const adapter = new Last9TracesAdapter(
+    { TELEMETRY_DIET_LAST9_ORG_SLUG: 'example-org' },
+    { oauth },
+  );
+
+  await adapter.connect();
+  const input = await adapter.collect({
+    service: 'checkout-api',
+    environment: 'production',
+    timeWindow: { start: '2026-07-15T00:00:00Z', end: '2026-07-15T01:00:00Z' },
+  });
+
+  assert.deepEqual(calls, [{
+    name: 'get_service_traces',
+    args: {
+      service_name: 'checkout-api',
+      start_time_iso: '2026-07-15T00:00:00Z',
+      end_time_iso: '2026-07-15T01:00:00Z',
+      limit: 200,
+      env: 'production',
+    },
+  }]);
+  assert.deepEqual(input.aggregates.map(({ spanKind, spanName, errorCount }) => ({ spanKind, spanName, errorCount })), [
+    { spanKind: 'SERVER', spanName: 'GET /orders', errorCount: 0 },
+    { spanKind: 'CLIENT', spanName: 'postgres query', errorCount: 1 },
+  ]);
+  assert.doesNotMatch(JSON.stringify(input), /private-trace|private-span/);
+});
+
 test('normalizes direct aggregate lists without inventing bytes or savings', async () => {
   const tools = [{
     name: 'get_span_statistics',

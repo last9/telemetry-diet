@@ -6,7 +6,7 @@ Telemetry Diet is a local-first, read-only telemetry policy testbench. Contribut
 
 Requirements:
 
-- Node.js 22 or newer
+- Node.js 20 or newer
 - npm
 
 ```bash

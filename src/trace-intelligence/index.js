@@ -196,6 +196,7 @@ function spanNameNormalizationRecommendations(aggregates) {
 
     const kind = String(aggregate.spanKind || 'UNSPECIFIED').toUpperCase();
     const scope = scopeName(aggregate);
+    if (scope === 'unknown') continue;
     const key = `${scope}\u0000${kind}\u0000${normalized.normalizedSpanName}`;
     const current = groups.get(key) || {
       scope,

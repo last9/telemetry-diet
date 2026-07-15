@@ -104,6 +104,15 @@ function safeEvidenceString(value) {
   return value;
 }
 
+function normalizedSpanKind(value) {
+  const kind = safeEvidenceString(String(value || 'UNSPECIFIED'))
+    ?.toUpperCase()
+    .replace(/^SPAN_KIND_/, '');
+  return ['CLIENT', 'CONSUMER', 'INTERNAL', 'PRODUCER', 'SERVER', 'UNSPECIFIED'].includes(kind)
+    ? kind
+    : 'UNSPECIFIED';
+}
+
 function resourceAttributes(value) {
   const entries = Array.isArray(value)
     ? value
@@ -146,7 +155,7 @@ function spanCollection(value, output = [], depth = 0) {
 }
 
 function rawSpanIdentity(span) {
-  const kind = safeEvidenceString(String(own(span, ['spanKind', 'span_kind', 'kind']) || 'UNSPECIFIED'))?.toUpperCase();
+  const kind = normalizedSpanKind(own(span, ['spanKind', 'span_kind', 'kind']));
   const name = safeEvidenceString(own(span, ['spanName', 'span_name', 'operationName', 'operation_name', 'name']));
   const rawScope = own(span, ['instrumentationScope', 'instrumentation_scope', 'scopeName', 'scope_name', 'libraryName', 'library_name']);
   const scope = safeEvidenceString(typeof rawScope === 'object' ? own(rawScope, ['name']) : rawScope);
@@ -165,7 +174,8 @@ function rawSpanAttributes(span) {
 function rawSpanIsError(span) {
   if (span.error === true) return true;
   const code = typeof span.status === 'object' ? span.status?.code : own(span, ['statusCode', 'status_code']);
-  return code === 2 || String(code || '').toUpperCase() === 'ERROR';
+  const normalized = String(code || '').toUpperCase();
+  return Number(code) === 2 || normalized === 'ERROR' || normalized === 'STATUS_CODE_ERROR';
 }
 
 function aggregateRawSpans(payload) {
@@ -230,7 +240,7 @@ function normalizeAggregate(value) {
   const redundantWith = safeEvidenceString(own(value, ['redundantWith', 'redundant_with']));
   const httpRoute = safeEvidenceString(own(value, ['httpRoute', 'http_route', 'route']));
   return compact({
-    spanKind: safeEvidenceString(String(spanKind || 'UNSPECIFIED'))?.toUpperCase(),
+    spanKind: normalizedSpanKind(spanKind),
     spanName,
     instrumentationScope: typeof instrumentationScope === 'string' ? instrumentationScope : 'unknown',
     resourceAttributes: resourceAttributes(own(value, ['resourceAttributes', 'resource_attributes'])),

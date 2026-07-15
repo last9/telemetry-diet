@@ -299,6 +299,18 @@ test('high-cardinality span names produce a redacted normalization candidate', (
   assert.doesNotMatch(JSON.stringify(recommendation), /6ba7b81/);
 });
 
+test('span-name normalization does not invent an instrumentation scope', () => {
+  const result = analyzeTraceIntelligence({
+    aggregates: [
+      { spanKind: 'SERVER', spanName: 'GET /orders/6ba7b810-9dad-11d1-80b4-00c04fd430c8', count: 20 },
+      { spanKind: 'SERVER', spanName: 'GET /orders/6ba7b811-9dad-11d1-80b4-00c04fd430c8', count: 15 },
+    ],
+  });
+
+  assert.equal(result.recommendations.some(({ category }) => category === 'span-name-normalization'), false);
+  assert.doesNotMatch(result.artifacts.map(({ content }) => content).join('\n'), /instrumentation_scope\.name == "unknown"/);
+});
+
 test('normalization covers long opaque identifiers but ignores stable numeric names', () => {
   const result = analyzeTraceIntelligence({
     aggregates: [

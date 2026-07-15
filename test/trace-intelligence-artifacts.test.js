@@ -30,7 +30,8 @@ test('analysis exports visible non-applying OTel and OTTL drafts with safety lim
   assert.match(result.artifacts[0].content, /sampling_percentage: 25/);
   assert.match(result.artifacts[1].content, /delete_key\(resource\.attributes, "process\.command_args"\)/);
   assert.match(result.artifacts[1].content, /name == "encode payload"/);
-  assert.doesNotMatch(result.artifacts[1].content, /^drop\(\) where kind == SPAN_KIND_INTERNAL$/m);
+  assert.doesNotMatch(result.artifacts[1].content, /drop\(\)/);
+  assert.match(result.artifacts[1].content, /Filter processor span conditions \(matching spans are dropped\)/);
   assert.match(result.limitations.join('\n'), /SDK and instrumentation-library specific/);
   assert.match(result.limitations.join('\n'), /error and business-span coverage/);
   assert.match(result.limitations.join('\n'), /compression and exporter overhead/);

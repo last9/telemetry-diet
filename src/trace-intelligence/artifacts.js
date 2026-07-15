@@ -111,13 +111,14 @@ export function createTraceIntelligenceArtifacts(recommendations) {
     )),
     '# Span-name normalization statements',
     ...normalizationStatements,
+    '# Filter processor span conditions (matching spans are dropped)',
     '# Exact low-value leaf-span conditions',
     ...leafFilters.map(({ target }) => (
-      `drop() where kind == SPAN_KIND_INTERNAL and name == ${literal(target.spanName)} and instrumentation_scope.name == ${literal(target.instrumentationScope)} and status.code != STATUS_CODE_ERROR`
+      `kind == SPAN_KIND_INTERNAL and name == ${literal(target.spanName)} and instrumentation_scope.name == ${literal(target.instrumentationScope)} and status.code != STATUS_CODE_ERROR`
     )),
     '# Exact health-route INTERNAL leaf-span conditions',
     ...healthFilters.map(({ target }) => (
-      `drop() where kind == SPAN_KIND_INTERNAL and name == ${literal(target.spanName)} and instrumentation_scope.name == ${literal(target.instrumentationScope)} and attributes["http.route"] == ${literal(target.httpRoute)} and status.code != STATUS_CODE_ERROR`
+      `kind == SPAN_KIND_INTERNAL and name == ${literal(target.spanName)} and instrumentation_scope.name == ${literal(target.instrumentationScope)} and attributes["http.route"] == ${literal(target.httpRoute)} and status.code != STATUS_CODE_ERROR`
     )),
     `# Fast-success sampling candidates: ${fastSuccessCandidates.length} (no executable policy generated).`,
   ];

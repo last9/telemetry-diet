@@ -4,6 +4,7 @@ import { hasReadToolVerb, isSafeLast9ReadTool } from './last9-tool-safety.js';
 
 const QUERY_KEYS = new Set(['expr', 'expression', 'promql', 'query']);
 const TOOL_RESULT_LIMIT = 1000;
+const MAX_DASHBOARD_DETAILS = 100;
 const MAX_METRIC_NAMES = TOOL_RESULT_LIMIT;
 const MAX_REFERENCE_RECORDS = TOOL_RESULT_LIMIT * 4;
 const MAX_EVIDENCE_STRING_LENGTH = 1024;
@@ -19,13 +20,17 @@ const CAPABILITIES = {
     label: 'native dashboard definitions',
     aliases: ['get_dashboards', 'list_dashboards', 'get_native_dashboards', 'list_native_dashboards', 'get_last9_dashboards'],
   },
+  dashboardDetail: {
+    label: 'native dashboard definition',
+    aliases: ['get_dashboard'],
+  },
   grafana: {
     label: 'embedded Grafana dashboard definitions',
     aliases: ['get_grafana_dashboards', 'list_grafana_dashboards', 'get_embedded_grafana_dashboards', 'list_embedded_grafana_dashboards'],
   },
   alerts: {
     label: 'alert definitions',
-    aliases: ['get_alert_rules', 'list_alert_rules', 'get_alerts', 'list_alerts', 'get_alert_definitions', 'list_alert_definitions'],
+    aliases: ['get_alert_config', 'get_alert_rules', 'list_alert_rules', 'get_alert_definitions', 'list_alert_definitions'],
   },
   indicators: {
     label: 'entity indicator queries',
@@ -90,6 +95,10 @@ function toolScore(tool, capability) {
     if (!has(/\bdashboards?\b/) || has(/\bgrafana\b/)) return -1;
     return 100 + (has(/\b(native|last9|definitions?|panels?|queries)\b/) ? 20 : 0);
   }
+  if (capability === 'dashboardDetail') {
+    if (!has(/\bdashboards?\b/) || !has(/\b(definition|details?|panels?|queries)\b/)) return -1;
+    return 140;
+  }
   if (capability === 'grafana') {
     if (!has(/\bgrafana\b/) || !has(/\bdashboards?\b/)) return -1;
     return 130;
@@ -120,10 +129,11 @@ function toolArguments(tool, capability, values = {}) {
     if (/^(?:limit|count|page_?size|size)$/i.test(key)) args[key] = TOOL_RESULT_LIMIT;
     else if (/^(?:entity_?ids)$/i.test(key) && values.entityIds) args[key] = values.entityIds;
     else if (/^(?:entity_?id)$/i.test(key) && values.entityId) args[key] = values.entityId;
+    else if (/^(?:id|dashboard_?id)$/i.test(key) && values.dashboardId) args[key] = values.dashboardId;
     else if (/^(?:label|label_?name)$/i.test(key) && capability === 'inventory') args[key] = '__name__';
     else if (/^(?:include_?definitions?|include_?details?|full)$/i.test(key)) args[key] = true;
-    else if (/query|expr|search|filter/i.test(key)) {
-      args[key] = capability === 'inventory' ? 'count by (__name__)({__name__!=""})' : '*';
+    else if (required.has(key) && /query|expr|search|filter/i.test(key)) {
+      args[key] = capability === 'inventory' ? '{__name__!=""}' : '*';
     }
   }
   return args;
@@ -264,6 +274,102 @@ function dashboardReferences(payload) {
   return references;
 }
 
+function dashboardSummaries(payload) {
+  const summaries = [];
+  const seen = new Set();
+  const visit = (value) => {
+    if (Array.isArray(value)) {
+      value.forEach(visit);
+      return;
+    }
+    if (!value || typeof value !== 'object') return;
+    const id = firstValue(value, ['id', 'uid', 'dashboard_id', 'dashboardId']);
+    const name = firstValue(value, ['name', 'title']);
+    if (id != null && name != null && !Array.isArray(value.panels)) {
+      const boundedId = boundedString(id);
+      if (!seen.has(boundedId)) {
+        if (summaries.length >= MAX_DASHBOARD_DETAILS) failBounds();
+        seen.add(boundedId);
+        summaries.push({ id: boundedId, name: boundedString(name) });
+      }
+      return;
+    }
+    Object.values(value).forEach(visit);
+  };
+  visit(payload);
+  return summaries;
+}
+
+function hasRecognizedDashboardCollection(payload) {
+  if (Array.isArray(payload)) return true;
+  if (!payload || typeof payload !== 'object') return false;
+  return Object.entries(payload).some(([key, value]) => (
+    /^(?:data|result|dashboards?|items)$/i.test(key) && (Array.isArray(value) || (value && typeof value === 'object'))
+  ));
+}
+
+function hasRecognizedAlertPayload(payload) {
+  if (Array.isArray(payload)) return true;
+  if (!payload || typeof payload !== 'object') return false;
+  if (typeof payload.text === 'string') return /^Found \d+ alert rules:/i.test(payload.text.trim());
+  return Object.entries(payload).some(([key, value]) => (
+    /^(?:data|result|alerts?|rules?|groups?|items)$/i.test(key)
+      && (Array.isArray(value) || (value && typeof value === 'object'))
+  ));
+}
+
+function hasRecognizedIndicatorPayload(payload) {
+  if (Array.isArray(payload)) return true;
+  if (!payload || typeof payload !== 'object') return false;
+  return Object.entries(payload).some(([key, value]) => (
+    /^(?:data|result|entities|indicators|kpis|items)$/i.test(key)
+      && (Array.isArray(value) || (value && typeof value === 'object'))
+  ));
+}
+
+function alertReferencesFromText(text) {
+  const references = [];
+  let alert = { id: 'unknown-alert', name: 'Alert', updatedAt: null, queries: [] };
+  const flush = () => {
+    alert.queries.forEach((query, index) => appendReference(references, {
+      kind: 'alert',
+      sourceId: alert.id,
+      sourceName: index === 0 ? alert.name : `${alert.name} > PromQL ${index + 1}`,
+      query,
+      updatedAt: alert.updatedAt,
+    }));
+  };
+  for (const rawLine of String(text).split(/\r?\n/)) {
+    const line = rawLine.trim();
+    const rule = line.match(/^Alert Rule\s+\d+\s*:/i);
+    if (rule) {
+      flush();
+      alert = { id: 'unknown-alert', name: line.replace(/:$/, ''), updatedAt: null, queries: [] };
+      continue;
+    }
+    const id = line.match(/^ID:\s*(.+)$/i);
+    if (id) {
+      alert.id = boundedString(id[1].trim());
+      continue;
+    }
+    const name = line.match(/^(?:Rule Name|Alert Name):\s*(.+)$/i);
+    if (name) {
+      alert.name = boundedString(name[1].trim());
+      continue;
+    }
+    const updated = line.match(/^Updated(?: At)?:\s*(.+)$/i);
+    if (updated) {
+      alert.updatedAt = boundedString(updated[1].trim());
+      continue;
+    }
+    const promql = line.match(/^PromQL:\s*(.+)$/i);
+    if (!promql || /^\[.*(?:failed|unavailable).*\]$/i.test(promql[1].trim())) continue;
+    appendQuery(alert.queries, promql[1]);
+  }
+  flush();
+  return references;
+}
+
 function alertReferences(payload) {
   const references = [];
   const visit = (value, groupName) => {
@@ -272,6 +378,10 @@ function alertReferences(payload) {
       return;
     }
     if (!value || typeof value !== 'object') return;
+    if (typeof value.text === 'string') {
+      alertReferencesFromText(value.text).forEach((reference) => appendBounded(references, reference));
+      return;
+    }
     if (Array.isArray(value.rules)) {
       const nextGroup = String(firstValue(value, ['name', 'title', 'group_name', 'groupName']) ?? groupName ?? 'Alerts');
       value.rules.forEach((rule) => visit(rule, nextGroup));
@@ -412,8 +522,43 @@ export class Last9MetricsAdapter {
       }
       try {
         payloads[capability] = await this.callCapability(capability);
+        if (capability === 'dashboards') {
+          const inlineReferences = dashboardReferences(payloads.dashboards);
+          const summaries = inlineReferences.length === 0 ? dashboardSummaries(payloads.dashboards) : [];
+          if (inlineReferences.length === 0 && summaries.length > 0) {
+            const detailTool = this.capabilities.dashboardDetail;
+            if (!detailTool) {
+              payloads.dashboards = undefined;
+              warnings.push('Last9 returned dashboard metadata but did not advertise get_dashboard; native dashboard PromQL was not scanned.');
+              continue;
+            }
+            const definitions = [];
+            for (const dashboard of summaries) {
+              definitions.push(await this.callCapability('dashboardDetail', { dashboardId: dashboard.id }));
+            }
+            if (definitions.some((definition) => dashboardDocuments(definition).length === 0)) {
+              payloads.dashboards = undefined;
+              warnings.push('Last9 dashboard definition response shape was not recognized; native dashboard PromQL was not scanned.');
+              continue;
+            }
+            payloads.dashboards = definitions;
+          } else if (inlineReferences.length === 0 && !hasRecognizedDashboardCollection(payloads.dashboards)) {
+            payloads.dashboards = undefined;
+            warnings.push('Last9 native dashboard response shape was not recognized; those references were not scanned.');
+            continue;
+          }
+        } else if (capability === 'grafana' && !hasRecognizedDashboardCollection(payloads.grafana)) {
+          payloads.grafana = undefined;
+          warnings.push('Last9 Grafana dashboard response shape was not recognized; those references were not scanned.');
+          continue;
+        } else if (capability === 'alerts' && !hasRecognizedAlertPayload(payloads.alerts)) {
+          payloads.alerts = undefined;
+          warnings.push('Last9 alert definition response shape was not recognized; those references were not scanned.');
+          continue;
+        }
         successfulReferenceScans += 1;
-      } catch {
+      } catch (error) {
+        if (error?.message === BOUNDS_ERROR) throw error;
         warnings.push(`Could not scan ${CAPABILITIES[capability].label}; the read request failed.`);
       }
     }
@@ -429,12 +574,14 @@ export class Last9MetricsAdapter {
         if (needsSingleEntity && entityIds.length) {
           payloads.indicators = [];
           for (const entityId of entityIds) payloads.indicators.push(await this.callCapability('indicators', { entityId }));
+          if (!hasRecognizedIndicatorPayload(payloads.indicators)) throw new Error('Unrecognized indicator response.');
           successfulReferenceScans += 1;
         } else if (needsSingleEntity) {
           payloads.indicators = [];
           warnings.push('Entity indicators require alert entity IDs, but none were advertised by the scanned alerts.');
         } else {
           payloads.indicators = await this.callCapability('indicators', { entityIds });
+          if (!hasRecognizedIndicatorPayload(payloads.indicators)) throw new Error('Unrecognized indicator response.');
           successfulReferenceScans += 1;
         }
       } catch {
