@@ -449,10 +449,14 @@ function renderSavings() {
     $('#savings-cost').textContent = '—';
   }
   const bits = [];
-  if (events) bits.push(`≈${formatNumber(events)} events trimmed / window`);
+  if (events) bits.push(`≈${formatNumber(events)} records affected / window`);
   if (pii) bits.push(`${pii} PII field${pii > 1 ? 's' : ''} removed`);
   bits.push(`assumes ${baseline.gb} GB/day ingest, uniform event size`);
-  $('#preview-caveat').textContent = `Directional. ${bits.join(' · ')}. Nothing is applied.`;
+  // Keep the analyzer's own caveat — e.g. that overlapping drop categories make
+  // the reduction an upper bound — rather than silently dropping it.
+  const notes = [`Directional. ${bits.join(' · ')}. Nothing is applied.`];
+  if (preview.caveat) notes.push(preview.caveat);
+  $('#preview-caveat').textContent = notes.join(' ');
   renderConfigBreakdown();
 }
 
