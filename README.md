@@ -118,9 +118,11 @@ The report is organization-wide and includes exact query provenance. It does not
 Trace Intelligence ranks measured bytes before span counts and considers these guarded levers in order:
 
 1. Resource-attribute trimming that preserves critical service and SDK attributes.
-2. Selective redundant instrumentation disablement while retaining the paired boundary span.
-3. Exact low-value leaf `INTERNAL` span filters that exclude errors and business spans.
-4. Residual head sampling as a final lever, with explicit APM and error-visibility caveats.
+2. Conservative UUID and long-hex span-name normalization when multiple names collapse to one redacted pattern.
+3. Selective redundant instrumentation disablement while retaining the paired boundary span.
+4. Exact low-value or health-route `INTERNAL` leaf filters that exclude errors, business spans, and protected boundary spans.
+5. Fast-success cohorts as review-only sampling candidates with an explicit measured-duration threshold.
+6. Residual head sampling as a final lever, with explicit APM and error-visibility caveats.
 
 Generated OTel Collector and OTTL text is visibly marked **EXPORT-ONLY DRAFT** and is never applied. See [Trace Intelligence](docs/trace-intelligence.md).
 

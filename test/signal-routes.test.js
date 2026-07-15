@@ -70,9 +70,16 @@ test('sample traces route returns ticket-grounded byte-first recommendations and
 
   assert.equal(analysis.analysisType, 'traces');
   assert.ok(analysis.result.summary.totalBytes > 0);
+  const categories = new Set(analysis.result.recommendations.map(({ category }) => category));
+  assert.equal(categories.has('span-name-normalization'), true);
+  assert.equal(categories.has('health-route-candidate'), true);
+  assert.equal(categories.has('fast-success-cohort'), true);
   assert.equal(analysis.result.recommendations.at(-1).category, 'residual-head-sampling');
   assert.match(analysis.artifacts.collector, /export-only|draft/i);
+  assert.match(analysis.artifacts.collector, /replace_pattern\(name,/);
   assert.match(analysis.artifacts.ottl, /export-only|draft/i);
+  assert.match(analysis.artifacts.ottl, /http\.route/);
+  assert.match(analysis.artifacts.ottl, /Fast-success sampling candidates: 1/);
   assert.equal('otel' in analysis.artifacts, false);
   assert.match(analysis.artifacts.markdown, /Trace intelligence/i);
 });

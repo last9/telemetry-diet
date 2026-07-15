@@ -2,6 +2,8 @@ import {
   createTraceIntelligenceArtifacts,
   TRACE_INTELLIGENCE_LIMITATIONS,
 } from './artifacts.js';
+import { normalizeHighCardinalitySpanName } from './span-name-patterns.js';
+import { exactHealthRoute } from './trace-candidates.js';
 
 function uniqueSorted(values) {
   return [...new Set(values)].sort((left, right) => left.localeCompare(right));
@@ -184,6 +186,153 @@ function lowValueLeafRecommendations(aggregates) {
   });
 }
 
+function spanNameNormalizationRecommendations(aggregates) {
+  const groups = new Map();
+
+  for (const aggregate of aggregates) {
+    const spanName = String(aggregate.spanName || 'unknown');
+    const normalized = normalizeHighCardinalitySpanName(spanName);
+    if (!normalized.changed) continue;
+
+    const kind = String(aggregate.spanKind || 'UNSPECIFIED').toUpperCase();
+    const scope = scopeName(aggregate);
+    const key = `${scope}\u0000${kind}\u0000${normalized.normalizedSpanName}`;
+    const current = groups.get(key) || {
+      scope,
+      kind,
+      normalizedSpanName: normalized.normalizedSpanName,
+      patterns: new Set(),
+      originalNames: new Set(),
+      observedSpanCount: 0,
+      measuredBytes: 0,
+      byteMeasurementComplete: true,
+    };
+    normalized.patterns.forEach((pattern) => current.patterns.add(pattern));
+    current.originalNames.add(spanName);
+    current.observedSpanCount += number(aggregate.count);
+    const bytes = measuredNumber(aggregate.bytes);
+    if (bytes === null) current.byteMeasurementComplete = false;
+    else current.measuredBytes += bytes;
+    groups.set(key, current);
+  }
+
+  return [...groups.values()].flatMap((group) => {
+    if (group.originalNames.size < 2) return [];
+    return [{
+      id: `span-name-normalization.${group.scope}.${group.kind}.${encodeURIComponent(group.normalizedSpanName)}`,
+      category: 'span-name-normalization',
+      target: {
+        instrumentationScope: group.scope,
+        spanKind: group.kind,
+        normalizedSpanName: group.normalizedSpanName,
+        patterns: [...group.patterns].sort(),
+      },
+      evidence: {
+        distinctSpanNames: group.originalNames.size,
+        observedSpanCount: group.observedSpanCount,
+        measuredBytes: group.byteMeasurementComplete ? group.measuredBytes : null,
+      },
+      estimatedByteReduction: null,
+      estimatedSpanReduction: 0,
+      estimateBasis: 'cardinality-reduction-not-an-export-byte-estimate',
+      preserves: ['span records', 'span kinds', 'error-bearing spans'],
+      requiresReview: true,
+    }];
+  });
+}
+
+function healthRouteRecommendations(aggregates) {
+  return aggregates.flatMap((aggregate) => {
+    const httpRoute = exactHealthRoute(aggregate.httpRoute);
+    if (!httpRoute) return [];
+
+    const spanKind = String(aggregate.spanKind || 'UNSPECIFIED').toUpperCase();
+    const instrumentationScope = scopeName(aggregate);
+    const spanName = String(aggregate.spanName || 'unknown');
+    const measuredBytes = measuredNumber(aggregate.bytes);
+    const errorCount = measuredNumber(aggregate.errorCount);
+    const draftEligible = spanKind === 'INTERNAL'
+      && aggregate.leaf === true
+      && aggregate.businessSpan !== true
+      && errorCount === 0;
+
+    return [{
+      id: `health-route.${instrumentationScope}.${spanKind}.${encodeURIComponent(httpRoute)}.${encodeURIComponent(spanName)}`,
+      category: 'health-route-candidate',
+      target: {
+        httpRoute,
+        instrumentationScope,
+        spanKind,
+        spanName,
+        draftEligible,
+      },
+      evidence: {
+        measuredBytes,
+        observedSpanCount: number(aggregate.count),
+        errorCount,
+      },
+      estimatedByteReduction: null,
+      estimatedSpanReduction: 0,
+      estimateBasis: 'candidate-not-an-export-byte-estimate',
+      preserves: [
+        'error-bearing spans',
+        'business spans',
+        'SERVER and CLIENT spans in generated drafts',
+      ],
+      requiresReview: true,
+      caveats: [
+        'Health traffic can carry availability signals; validate monitoring coverage before rollout.',
+      ],
+    }];
+  });
+}
+
+function fastSuccessRecommendations(aggregates, configuration) {
+  const maxAverageDurationMs = measuredNumber(configuration?.maxAverageDurationMs);
+  if (maxAverageDurationMs === null || maxAverageDurationMs <= 0) return [];
+
+  return aggregates.flatMap((aggregate) => {
+    const averageDurationMs = measuredNumber(aggregate.averageDurationMs);
+    const errorCount = measuredNumber(aggregate.errorCount);
+    if (
+      averageDurationMs === null
+      || averageDurationMs > maxAverageDurationMs
+      || errorCount === null
+      || errorCount > 0
+      || aggregate.businessSpan === true
+      || number(aggregate.count) === 0
+    ) return [];
+
+    const instrumentationScope = scopeName(aggregate);
+    const spanKind = String(aggregate.spanKind || 'UNSPECIFIED').toUpperCase();
+    const spanName = String(aggregate.spanName || 'unknown');
+    return [{
+      id: `fast-success.${instrumentationScope}.${spanKind}.${encodeURIComponent(spanName)}`,
+      category: 'fast-success-cohort',
+      target: {
+        instrumentationScope,
+        spanKind,
+        spanName,
+        maxAverageDurationMs,
+      },
+      evidence: {
+        averageDurationMs,
+        observedSpanCount: number(aggregate.count),
+        measuredBytes: measuredNumber(aggregate.bytes),
+        errorCount,
+      },
+      estimatedByteReduction: null,
+      estimatedSpanReduction: null,
+      estimateBasis: 'sampling-candidate-not-an-exact-savings-estimate',
+      preserves: ['no generated drop rule', 'error-bearing spans excluded from the cohort'],
+      requiresReview: true,
+      caveats: [
+        'Validate complete-trace latency and error retention before defining a sampling policy.',
+      ],
+    }];
+  });
+}
+
 function residualHeadSamplingRecommendation(aggregates, configuration) {
   const ratio = Number(configuration?.ratio);
   if (!Number.isFinite(ratio) || ratio <= 0 || ratio >= 1) return [];
@@ -233,6 +382,9 @@ export function analyzeTraceIntelligence(input = {}) {
 
   const recommendations = rankRecommendations([
     ...resourceTrimRecommendations(aggregates),
+    ...spanNameNormalizationRecommendations(aggregates),
+    ...healthRouteRecommendations(aggregates),
+    ...fastSuccessRecommendations(aggregates, input.fastSuccessCandidates),
     ...redundantInstrumentationRecommendations(aggregates),
     ...lowValueLeafRecommendations(aggregates),
     ...residualHeadSamplingRecommendation(aggregates, input.residualHeadSampling),

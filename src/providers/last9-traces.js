@@ -228,6 +228,7 @@ function normalizeAggregate(value) {
   const count = finiteNumber(own(value, ['count', 'span_count', 'total_spans']));
   if (!spanName || count === undefined) return null;
   const redundantWith = safeEvidenceString(own(value, ['redundantWith', 'redundant_with']));
+  const httpRoute = safeEvidenceString(own(value, ['httpRoute', 'http_route', 'route']));
   return compact({
     spanKind: safeEvidenceString(String(spanKind || 'UNSPECIFIED'))?.toUpperCase(),
     spanName,
@@ -236,6 +237,10 @@ function normalizeAggregate(value) {
     bytes: finiteNumber(own(value, ['bytes', 'total_bytes', 'size_bytes'])),
     count,
     errorCount: finiteNumber(own(value, ['errorCount', 'error_count', 'errors'])),
+    httpRoute,
+    averageDurationMs: finiteNumber(own(value, [
+      'averageDurationMs', 'average_duration_ms', 'avgDurationMs', 'avg_duration_ms',
+    ])),
     leaf: boolean(own(value, ['leaf', 'is_leaf'])),
     lowValue: boolean(own(value, ['lowValue', 'low_value'])),
     businessSpan: boolean(own(value, ['businessSpan', 'business_span'])),
@@ -267,6 +272,20 @@ function residualHeadSampling(value, depth = 0) {
   return undefined;
 }
 
+function fastSuccessCandidates(value, depth = 0) {
+  if (!value || typeof value !== 'object' || depth > 6) return undefined;
+  const candidate = value.fastSuccessCandidates || value.fast_success_candidates;
+  const maxAverageDurationMs = finiteNumber(
+    candidate?.maxAverageDurationMs ?? candidate?.max_average_duration_ms,
+  );
+  if (maxAverageDurationMs !== undefined) return { maxAverageDurationMs };
+  for (const item of Object.values(value)) {
+    const found = fastSuccessCandidates(item, depth + 1);
+    if (found) return found;
+  }
+  return undefined;
+}
+
 function normalizeAggregatePayload(payload) {
   const collection = Array.isArray(payload) ? payload : findAggregateCollection(payload);
   if (collection?.length > MAX_TRACE_RECORDS) {
@@ -274,7 +293,11 @@ function normalizeAggregatePayload(payload) {
   }
   const aggregates = collection?.map(normalizeAggregate).filter(Boolean) || [];
   if (!aggregates.length) return null;
-  return compact({ aggregates, residualHeadSampling: residualHeadSampling(payload) });
+  return compact({
+    aggregates,
+    residualHeadSampling: residualHeadSampling(payload),
+    fastSuccessCandidates: fastSuccessCandidates(payload),
+  });
 }
 
 export class Last9TracesAdapter {

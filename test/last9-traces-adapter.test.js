@@ -33,11 +33,14 @@ test('prefers advertised read-only aggregate trace analysis and returns only nor
           total_bytes: 2_400,
           span_count: 20,
           error_count: 2,
+          http_route: '/items/:id',
+          average_duration_ms: 7.5,
           leaf: false,
           low_value: false,
           business_span: true,
         }],
         residual_head_sampling: { ratio: 0.25, credential: 'private-credential-material' },
+        fast_success_candidates: { max_average_duration_ms: 10, note: 'private-note' },
       },
     },
   });
@@ -77,13 +80,16 @@ test('prefers advertised read-only aggregate trace analysis and returns only nor
       bytes: 2_400,
       count: 20,
       errorCount: 2,
+      httpRoute: '/items/:id',
+      averageDurationMs: 7.5,
       leaf: false,
       lowValue: false,
       businessSpan: true,
     }],
     residualHeadSampling: { ratio: 0.25 },
+    fastSuccessCandidates: { maxAverageDurationMs: 10 },
   });
-  assert.doesNotMatch(JSON.stringify(input), /private-service-value|private-command-value|private-credential-material/);
+  assert.doesNotMatch(JSON.stringify(input), /private-service-value|private-command-value|private-credential-material|private-note/);
 });
 
 test('uses a bounded trace-search fallback and keeps unmeasured bytes unknown', async () => {

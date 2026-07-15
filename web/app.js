@@ -33,8 +33,11 @@ const signalOutputMeta = {
 };
 const traceRecommendationCopy = {
   'resource-attribute-trim': 'Trim a measured resource attribute while preserving span records and protected service context.',
+  'span-name-normalization': 'Normalize repeated opaque identifiers in span names while preserving the spans themselves.',
   'redundant-instrumentation-disablement': 'Review source-level disablement for this wrapper while retaining its paired boundary instrumentation.',
   'selective-low-value-leaf-filter': 'Filter only this exact low-value INTERNAL leaf span after validating error and business coverage.',
+  'health-route-candidate': 'Review this exact health-route cohort; generated filters remain limited to safe INTERNAL leaves.',
+  'fast-success-cohort': 'Consider targeted sampling only after validating full-trace latency and error retention.',
   'residual-head-sampling': 'Consider residual head sampling only after targeted reductions, with separately validated error retention.',
 };
 

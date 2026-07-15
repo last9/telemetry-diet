@@ -74,7 +74,7 @@ Each query is normalized with its source type, source ID, display path, and upda
 
 Trace Intelligence prefers a read-only aggregate trace analysis tool. When no aggregate tool exists, it accepts only a recognized trace-search tool with a limit argument and requests no more than 200 records. The fallback groups records locally and discards raw spans; it never returns attribute values, trace/span IDs, credentials, or upstream error payloads.
 
-Missing byte measurements remain unknown rather than being inferred. An unrecognized or unbounded tool contract fails closed.
+Aggregate responses may additionally provide `http_route`, `average_duration_ms`, and an explicit `fast_success_candidates.max_average_duration_ms` threshold. These fields enable guarded health-route and fast-success candidates without exposing raw traces. Missing byte or duration measurements remain unknown rather than being inferred. An unrecognized or unbounded tool contract fails closed.
 
 ## Normalization and redaction
 

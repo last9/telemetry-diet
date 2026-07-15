@@ -50,3 +50,39 @@ test('markdown distinguishes observed bytes from an unavailable complete total',
   assert.match(markdown, /Complete byte total: unavailable/);
   assert.match(markdown, /Byte measurements: 1 measured; 1 unmeasured/);
 });
+
+test('new trace candidates generate only guarded export-only statements', () => {
+  const result = analyzeTraceIntelligence({
+    aggregates: [
+      {
+        spanKind: 'SERVER',
+        spanName: 'GET /orders/6ba7b810-9dad-11d1-80b4-00c04fd430c8',
+        instrumentationScope: 'http.server', count: 20, errorCount: 0,
+      },
+      {
+        spanKind: 'SERVER',
+        spanName: 'GET /orders/6ba7b811-9dad-11d1-80b4-00c04fd430c8',
+        instrumentationScope: 'http.server', count: 15, errorCount: 0,
+      },
+      {
+        spanKind: 'SERVER', spanName: 'GET /healthz', httpRoute: '/healthz',
+        instrumentationScope: 'http.server', count: 400, errorCount: 0,
+      },
+      {
+        spanKind: 'INTERNAL', spanName: 'health response encoder', httpRoute: '/healthz',
+        instrumentationScope: 'response.encoder', count: 400, errorCount: 0,
+        leaf: true, averageDurationMs: 3,
+      },
+    ],
+    fastSuccessCandidates: { maxAverageDurationMs: 10 },
+  });
+
+  const yaml = result.artifacts.find(({ format }) => format === 'otel-collector-yaml').content;
+  const ottl = result.artifacts.find(({ format }) => format === 'ottl').content;
+  assert.match(yaml, /replace_pattern\(name,/);
+  assert.match(ottl, /attributes\["http\.route"\] == "\/healthz"/);
+  assert.match(ottl, /kind == SPAN_KIND_INTERNAL/);
+  assert.doesNotMatch(ottl, /kind == SPAN_KIND_SERVER[^\n]*http\.route/);
+  assert.match(ottl, /Fast-success sampling candidates: 1/);
+  assert.doesNotMatch(`${yaml}\n${ottl}`, /6ba7b81/);
+});

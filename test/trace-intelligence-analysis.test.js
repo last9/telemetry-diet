@@ -251,6 +251,211 @@ test('leaf filtering excludes SERVER, CLIENT, error-bearing, and business spans'
   ]);
 });
 
+test('high-cardinality span names produce a redacted normalization candidate', () => {
+  const result = analyzeTraceIntelligence({
+    aggregates: [
+      {
+        spanKind: 'SERVER',
+        spanName: 'GET /orders/6ba7b810-9dad-11d1-80b4-00c04fd430c8',
+        instrumentationScope: 'http.server',
+        bytes: 1_200,
+        count: 20,
+        errorCount: 0,
+      },
+      {
+        spanKind: 'SERVER',
+        spanName: 'GET /orders/6ba7b811-9dad-11d1-80b4-00c04fd430c8',
+        instrumentationScope: 'http.server',
+        bytes: 900,
+        count: 15,
+        errorCount: 0,
+      },
+    ],
+  });
+
+  const recommendation = result.recommendations.find(({ category }) => (
+    category === 'span-name-normalization'
+  ));
+  assert.deepEqual(recommendation, {
+    id: 'span-name-normalization.http.server.SERVER.GET%20%2Forders%2F%7Buuid%7D',
+    category: 'span-name-normalization',
+    target: {
+      instrumentationScope: 'http.server',
+      spanKind: 'SERVER',
+      normalizedSpanName: 'GET /orders/{uuid}',
+      patterns: ['uuid'],
+    },
+    evidence: {
+      distinctSpanNames: 2,
+      observedSpanCount: 35,
+      measuredBytes: 2_100,
+    },
+    estimatedByteReduction: null,
+    estimatedSpanReduction: 0,
+    estimateBasis: 'cardinality-reduction-not-an-export-byte-estimate',
+    preserves: ['span records', 'span kinds', 'error-bearing spans'],
+    requiresReview: true,
+  });
+  assert.doesNotMatch(JSON.stringify(recommendation), /6ba7b81/);
+});
+
+test('normalization covers long opaque identifiers but ignores stable numeric names', () => {
+  const result = analyzeTraceIntelligence({
+    aggregates: [
+      {
+        spanKind: 'INTERNAL', spanName: 'process job aabbccddeeff00112233445566778899',
+        instrumentationScope: 'jobs.worker', count: 10, errorCount: 0,
+      },
+      {
+        spanKind: 'INTERNAL', spanName: 'process job 11223344556677889900aabbccddeeff',
+        instrumentationScope: 'jobs.worker', count: 12, errorCount: 0,
+      },
+      {
+        spanKind: 'INTERNAL', spanName: 'HTTP 200',
+        instrumentationScope: 'http.status', count: 100, errorCount: 0,
+      },
+    ],
+  });
+
+  const normalizations = result.recommendations.filter(({ category }) => (
+    category === 'span-name-normalization'
+  ));
+  assert.equal(normalizations.length, 1);
+  assert.equal(normalizations[0].target.normalizedSpanName, 'process job {hex}');
+  assert.deepEqual(normalizations[0].target.patterns, ['hex']);
+  assert.doesNotMatch(JSON.stringify(normalizations), /aabbccdd|11223344/);
+});
+
+test('health routes are reported without making protected spans draft-eligible', () => {
+  const result = analyzeTraceIntelligence({
+    aggregates: [
+      {
+        spanKind: 'SERVER', spanName: 'GET /healthz', httpRoute: '/healthz',
+        instrumentationScope: 'http.server', bytes: 2_000, count: 400, errorCount: 0,
+      },
+      {
+        spanKind: 'INTERNAL', spanName: 'health response encoder', httpRoute: '/healthz',
+        instrumentationScope: 'response.encoder', bytes: 600, count: 400, errorCount: 0,
+        leaf: true,
+      },
+      {
+        spanKind: 'INTERNAL', spanName: 'readiness business check', httpRoute: '/readyz',
+        instrumentationScope: 'domain.health', bytes: 800, count: 100, errorCount: 0,
+        leaf: true, businessSpan: true,
+      },
+    ],
+  });
+
+  const candidates = result.recommendations.filter(({ category }) => (
+    category === 'health-route-candidate'
+  ));
+  assert.deepEqual(candidates.map(({ target }) => target).sort((left, right) => (
+    left.instrumentationScope.localeCompare(right.instrumentationScope)
+  )), [
+    {
+      httpRoute: '/readyz', instrumentationScope: 'domain.health', spanKind: 'INTERNAL',
+      spanName: 'readiness business check', draftEligible: false,
+    },
+    {
+      httpRoute: '/healthz', instrumentationScope: 'http.server', spanKind: 'SERVER',
+      spanName: 'GET /healthz', draftEligible: false,
+    },
+    {
+      httpRoute: '/healthz', instrumentationScope: 'response.encoder', spanKind: 'INTERNAL',
+      spanName: 'health response encoder', draftEligible: true,
+    },
+  ]);
+  assert.ok(candidates.every(({ estimatedByteReduction, estimatedSpanReduction }) => (
+    estimatedByteReduction === null && estimatedSpanReduction === 0
+  )));
+});
+
+test('health-route candidates preserve the exact observed route for generated matches', () => {
+  const result = analyzeTraceIntelligence({
+    aggregates: [{
+      spanKind: 'INTERNAL', spanName: 'health response encoder', httpRoute: '/HealthZ',
+      instrumentationScope: 'response.encoder', count: 10, errorCount: 0, leaf: true,
+    }],
+  });
+
+  const candidate = result.recommendations.find(({ category }) => (
+    category === 'health-route-candidate'
+  ));
+  assert.equal(candidate.target.httpRoute, '/HealthZ');
+  assert.match(result.artifacts[1].content, /http\.route"\] == "\/HealthZ"/);
+});
+
+test('health routes with missing error evidence remain review-only', () => {
+  const result = analyzeTraceIntelligence({
+    aggregates: [{
+      spanKind: 'INTERNAL', spanName: 'liveness response encoder', httpRoute: '/livez',
+      instrumentationScope: 'response.encoder', count: 10, leaf: true,
+    }],
+  });
+
+  const candidate = result.recommendations.find(({ category }) => (
+    category === 'health-route-candidate'
+  ));
+  assert.equal(candidate.target.draftEligible, false);
+  assert.equal(candidate.evidence.errorCount, null);
+  assert.doesNotMatch(result.artifacts[1].content, /drop\(\)/);
+});
+
+test('fast successful cohorts require an explicit measured-duration threshold', () => {
+  const aggregates = [
+    {
+      spanKind: 'INTERNAL', spanName: 'encode response', instrumentationScope: 'response.encoder',
+      bytes: 900, count: 300, errorCount: 0, averageDurationMs: 4.5, leaf: true,
+    },
+    {
+      spanKind: 'INTERNAL', spanName: 'occasionally failing cache lookup', instrumentationScope: 'cache.client',
+      bytes: 1_200, count: 300, errorCount: 2, averageDurationMs: 3.2, leaf: true,
+    },
+    {
+      spanKind: 'SERVER', spanName: 'GET /orders', instrumentationScope: 'http.server',
+      bytes: 2_000, count: 300, errorCount: 0, averageDurationMs: 25,
+    },
+    {
+      spanKind: 'INTERNAL', spanName: 'missing error evidence', instrumentationScope: 'unknown.errors',
+      bytes: 500, count: 50, averageDurationMs: 2, leaf: true,
+    },
+  ];
+
+  assert.equal(analyzeTraceIntelligence({ aggregates }).recommendations.some(({ category }) => (
+    category === 'fast-success-cohort'
+  )), false);
+
+  const result = analyzeTraceIntelligence({
+    aggregates,
+    fastSuccessCandidates: { maxAverageDurationMs: 10 },
+  });
+  const candidates = result.recommendations.filter(({ category }) => (
+    category === 'fast-success-cohort'
+  ));
+  assert.deepEqual(candidates, [{
+    id: 'fast-success.response.encoder.INTERNAL.encode%20response',
+    category: 'fast-success-cohort',
+    target: {
+      instrumentationScope: 'response.encoder',
+      spanKind: 'INTERNAL',
+      spanName: 'encode response',
+      maxAverageDurationMs: 10,
+    },
+    evidence: {
+      averageDurationMs: 4.5,
+      observedSpanCount: 300,
+      measuredBytes: 900,
+      errorCount: 0,
+    },
+    estimatedByteReduction: null,
+    estimatedSpanReduction: null,
+    estimateBasis: 'sampling-candidate-not-an-exact-savings-estimate',
+    preserves: ['no generated drop rule', 'error-bearing spans excluded from the cohort'],
+    requiresReview: true,
+    caveats: ['Validate complete-trace latency and error retention before defining a sampling policy.'],
+  }]);
+});
+
 test('residual head sampling is last and does not claim exact savings', () => {
   const result = analyzeTraceIntelligence({
     aggregates: [
