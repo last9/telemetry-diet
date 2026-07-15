@@ -561,6 +561,22 @@ function renderAnalysis(data) {
   $('#results-title').textContent = summary.service || 'Selected service';
   $('#results-scope').textContent = `${summary.environment || 'all environments'} · ${new Date(summary.timeWindow.start).toLocaleString()} – ${new Date(summary.timeWindow.end).toLocaleString()}`;
   $('#records-total').textContent = formatNumber(summary.recordsAnalyzed);
+
+  // Distinguish "no logs in this window" from "logs found, nothing to change".
+  const hasChanges = state.findings.length > 0;
+  const service = summary.service || 'this service';
+  const emptyPanel = $('#analysis-empty');
+  emptyPanel.hidden = hasChanges;
+  $('.review-grid').hidden = !hasChanges;
+  if (!hasChanges) {
+    const noLogs = !summary.recordsAnalyzed;
+    emptyPanel.classList.toggle('no-logs', noLogs);
+    $('#analysis-empty-title').textContent = noLogs ? 'No logs found' : 'Nothing to trim';
+    $('#analysis-empty-copy').textContent = noLogs
+      ? `No logs came back for ${service} in this window. Try a wider time window or a different scope.`
+      : `${service} looks clean for this window — no noisy or risky logs to trim.`;
+  }
+
   renderChanges();
   renderSavings();
   renderOutput();
@@ -900,6 +916,7 @@ $('#window-select').addEventListener('change', syncScopeRoute);
 $$('[data-signal]').forEach((button) => button.addEventListener('click', () => selectSignal(button.dataset.signal)));
 $('#analyze-button').addEventListener('click', analyze);
 $('#change-source').addEventListener('click', reset);
+$('#go-home').addEventListener('click', reset);
 window.addEventListener('popstate', restoreRoute);
 $$('.fmt button').forEach((button) => button.addEventListener('click', () => {
   state.output = button.dataset.output;

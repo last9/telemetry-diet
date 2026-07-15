@@ -65,7 +65,7 @@
 
     <main id="workbench-view" class="workbench-view" hidden>
       <header class="app-header">
-        <div class="app-brand"><div class="brand-mark small" aria-hidden="true"></div><strong>telemetry diet</strong></div>
+        <button type="button" class="app-brand" id="go-home" aria-label="Telemetry Diet — back to start"><span class="brand-mark small" aria-hidden="true"></span><strong>telemetry diet</strong></button>
         <div class="header-context"><span id="provider-label">Sample MCP</span><span class="readonly-pill"><i></i> read only</span></div>
         <button id="change-source" class="quiet-button">Change source</button>
       </header>
@@ -100,6 +100,12 @@
               <p id="results-scope"></p>
             </div>
             <div class="review-total"><strong id="records-total">0</strong><span>events scanned</span></div>
+          </div>
+
+          <div id="analysis-empty" class="analysis-empty" hidden>
+            <div class="ae-mark" aria-hidden="true"></div>
+            <h2 id="analysis-empty-title">Nothing to trim</h2>
+            <p id="analysis-empty-copy"></p>
           </div>
 
           <div class="review-grid">
