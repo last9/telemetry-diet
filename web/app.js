@@ -35,6 +35,7 @@ let generationTimer;
 let regenToken = 0;
 let changeSeq = 0; // source of DOM-safe ids for change detail panels
 let analysisAbort = null; // AbortController for the in-flight /api/analyze
+let draftBusy = false;
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -84,9 +85,15 @@ function isProviderRoute(provider) {
   return window.location.pathname !== '/' && routeParams().get('provider') === provider;
 }
 
+function closeDraftModal() {
+  const modal = $('#draft-modal');
+  if (modal?.open) modal.close();
+}
+
 function syncScopeRoute() {
   if (!state.provider || window.location.pathname === '/') return;
   if (analysisInFlight) cancelPendingAnalysis(); // changing scope abandons the running analysis
+  closeDraftModal();
   routeGeneration += 1;
   if (window.location.pathname.startsWith('/results/')) {
     state.analysisId = null;
@@ -185,7 +192,9 @@ function syncSignalControls() {
   $('#loading-title').textContent = copy.loading;
   $$('[data-signal]').forEach((button) => {
     button.disabled = analysisInFlight || (state.provider === 'datadog' && button.dataset.signal !== 'logs');
-    button.classList.toggle('active', button.dataset.signal === state.signal);
+    const active = button.dataset.signal === state.signal;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', String(active));
   });
 }
 
@@ -216,13 +225,16 @@ function selectSignal(signal) {
   state.signal = signal;
   state.analysisId = null;
   state.findings = [];
+  state.selected = new Set();
   state.artifacts = null;
   state.signalArtifacts = null;
+  closeDraftModal();
   $('#analysis-results').hidden = true;
   $('#signal-results').hidden = true;
   $('#loading-state').hidden = true;
   $('#empty-state').hidden = false;
   syncSignalControls();
+  syncDraftActions();
   syncScopeRoute();
 }
 
@@ -327,11 +339,11 @@ function changeImpact(finding) {
 }
 
 function evidenceLabel(finding) {
+  const examples = finding.examplesRedacted || [];
+  if (!examples.length) return `No examples returned — ${formatNumber(finding.affectedCount)} records affected`;
   if (finding.category === 'cardinality') return `Field values · redacted — ${formatNumber(finding.affectedCount)} records`;
   if (finding.category === 'drift') return `Conflicting fields — ${formatNumber(finding.affectedCount)} affected`;
-  return finding.examplesRedacted.length
-    ? `Matched log lines · redacted — ${finding.examplesRedacted.length} of ${formatNumber(finding.affectedCount)}`
-    : `Matched by field name · ${formatNumber(finding.affectedCount)} records`;
+  return `Matched log lines · redacted — ${examples.length} of ${formatNumber(finding.affectedCount)}`;
 }
 
 // One proposed-change row: verb · title · impact · include/skip, with a
@@ -411,16 +423,17 @@ function renderChange(finding) {
   const conf = document.createElement('span');
   conf.className = 'conf';
   conf.textContent = `${finding.confidence} confidence`;
-  why.append(conf, document.createTextNode(finding.suggestedAction || finding.warning || ''));
+  why.append(conf, document.createTextNode(finding.suggestedAction || 'Manual review recommended.'));
   const evLabel = document.createElement('div');
   evLabel.className = 'ev-label';
   evLabel.textContent = evidenceLabel(finding);
   detail.append(why, evLabel);
 
-  if (finding.examplesRedacted.length) {
+  const examples = finding.examplesRedacted || [];
+  if (examples.length) {
     const samples = document.createElement('div');
     samples.className = 'samples';
-    finding.examplesRedacted.forEach((line) => {
+    examples.forEach((line) => {
       const sline = document.createElement('div');
       sline.className = 'sline';
       sline.textContent = line;
@@ -428,14 +441,17 @@ function renderChange(finding) {
     });
     detail.append(samples);
   } else {
-    // No example values came back (e.g. the provider's bounded read didn't surface
-    // this field). Explain that the finding is name-based, not a failure.
     const note = document.createElement('p');
     note.className = 'ev-note';
-    const parts = ['The provider returned no example values for this field in the sampled window, so there is nothing to preview.'];
-    if (finding.warning) parts.push(finding.warning);
-    note.textContent = parts.join(' ');
+    note.textContent = 'The provider returned no redacted examples for this finding in the selected window. The analyzer may have used field names, aggregate values, or statistical evidence.';
     detail.append(note);
+  }
+
+  if (finding.warning) {
+    const warning = document.createElement('p');
+    warning.className = 'finding-warning';
+    warning.textContent = `Limitation: ${finding.warning}`;
+    detail.append(warning);
   }
 
   disclosure.addEventListener('click', () => {
@@ -460,7 +476,9 @@ function applyChangeFilter() {
     const key = chip.dataset.filter;
     const count = key === 'all' ? state.findings.length : (counts[key] || 0);
     chip.hidden = key !== 'all' && count === 0;
-    chip.classList.toggle('active', state.filter === key);
+    const active = state.filter === key;
+    chip.classList.toggle('active', active);
+    chip.setAttribute('aria-pressed', String(active));
     chip.replaceChildren(document.createTextNode(`${filterLabels[key] || key} `));
     const n = document.createElement('span');
     n.className = 'n';
@@ -485,7 +503,7 @@ function readBaseline() {
   try { stored = JSON.parse(localStorage.getItem(BASELINE_KEY) || '{}'); } catch { stored = {}; }
   const gb = Number(stored.gb);
   const cost = Number(stored.cost);
-  return { gb: Number.isFinite(gb) && gb > 0 ? gb : 40, cost: Number.isFinite(cost) && cost > 0 ? cost : 0.5 };
+  return { gb: Number.isFinite(gb) && gb >= 0 ? gb : 40, cost: Number.isFinite(cost) && cost >= 0 ? cost : 0.5 };
 }
 
 function formatGb(gb) { return gb >= 100 ? `${Math.round(gb)} GB` : `${gb.toFixed(1)} GB`; }
@@ -559,7 +577,7 @@ function renderConfigBreakdown() {
       box.append(br);
     });
   }
-  $('#copy-output').disabled = total === 0;
+  syncDraftActions();
 }
 
 function currentOutput() {
@@ -567,10 +585,45 @@ function currentOutput() {
   return state.output === 'last9' ? JSON.stringify(value, null, 2) : value || '';
 }
 
+function draftActionsReady() {
+  if (!state.artifacts) return false;
+  if (state.selected.size > 0) return true;
+  return state.findings.length === 0 && state.output === 'markdown' && Boolean(state.artifacts.markdown);
+}
+
+function syncDraftActions() {
+  const disabled = draftBusy || !draftActionsReady();
+  for (const selector of ['#copy-output', '#download-output', '#toggle-config', '#modal-copy', '#modal-download']) {
+    $(selector).disabled = disabled;
+  }
+  $('#analysis-empty-report').disabled = draftBusy || !state.artifacts?.markdown;
+}
+
 function renderOutput() {
   $('#output-code').textContent = currentOutput();
-  $$('.fmt button').forEach((button) => button.classList.toggle('active', button.dataset.output === state.output));
+  $$('.fmt button').forEach((button) => {
+    const active = button.dataset.output === state.output;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-selected', String(active));
+  });
   $('#copy-output').textContent = copyLabels[state.output] || 'Copy config';
+  syncDraftActions();
+}
+
+function renderLogLimitations(summary, countReported) {
+  const limitations = [...(summary.limitations || [])].map((value) =>
+    typeof value === 'string' ? value : value?.message || JSON.stringify(value));
+  if (!countReported) limitations.unshift('The provider did not report the analyzed record count.');
+  const panel = $('#log-limitations');
+  const list = $('#log-limitations-list');
+  list.replaceChildren();
+  limitations.forEach((limitation) => {
+    const item = document.createElement('li');
+    item.textContent = limitation;
+    list.append(item);
+  });
+  panel.hidden = limitations.length === 0;
+  return limitations;
 }
 
 function renderAnalysis(data) {
@@ -582,7 +635,11 @@ function renderAnalysis(data) {
   const { summary } = data;
   $('#results-title').textContent = summary.service || 'Selected service';
   $('#results-scope').textContent = `${summary.environment || 'all environments'} · ${new Date(summary.timeWindow.start).toLocaleString()} – ${new Date(summary.timeWindow.end).toLocaleString()}`;
-  $('#records-total').textContent = formatNumber(summary.recordsAnalyzed);
+  const countReported = summary.recordsAnalyzed != null && Number.isFinite(Number(summary.recordsAnalyzed));
+  const recordsAnalyzed = countReported ? Number(summary.recordsAnalyzed) : null;
+  $('#records-total').textContent = countReported ? formatNumber(recordsAnalyzed) : '—';
+  $('#records-total-label').textContent = countReported ? 'events scanned' : 'count not reported';
+  const limitations = renderLogLimitations(summary, countReported);
 
   // Distinguish "no logs in this window" from "logs found, nothing to change".
   const hasChanges = state.findings.length > 0;
@@ -591,12 +648,16 @@ function renderAnalysis(data) {
   emptyPanel.hidden = hasChanges;
   $('.review-grid').hidden = !hasChanges;
   if (!hasChanges) {
-    const noLogs = !summary.recordsAnalyzed;
+    const noLogs = countReported && recordsAnalyzed === 0;
+    const limitedCoverage = !countReported || limitations.length > 0;
     emptyPanel.classList.toggle('no-logs', noLogs);
-    $('#analysis-empty-title').textContent = noLogs ? 'No logs found' : 'Nothing to trim';
+    $('#analysis-empty-title').textContent = noLogs ? 'No logs found' : limitedCoverage ? 'No changes proposed' : 'Nothing to trim';
     $('#analysis-empty-copy').textContent = noLogs
       ? `No logs came back for ${service} in this window. Try a wider time window or a different scope.`
-      : `${service} looks clean for this window — no noisy or risky logs to trim.`;
+      : limitedCoverage
+        ? `No changes were proposed for ${service}, but provider coverage was limited. Review the caveats before treating this scope as clean.`
+        : `${service} produced no noisy or risky findings in this window.`;
+    state.output = 'markdown';
   }
 
   renderChanges();
@@ -630,8 +691,11 @@ function renderSignalOutput() {
   entries.forEach(([name]) => {
     const button = document.createElement('button');
     button.type = 'button';
+    button.setAttribute('role', 'tab');
     button.dataset.signalOutput = name;
-    button.classList.toggle('active', name === state.signalOutput);
+    const active = name === state.signalOutput;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-selected', String(active));
     button.textContent = signalOutputMeta[name]?.label || name.toUpperCase();
     button.addEventListener('click', () => {
       state.signalOutput = name;
@@ -823,8 +887,8 @@ async function analyze() {
 // The draft is only safe to copy/download once it matches the current
 // selection, so freeze those actions while a regeneration is in flight.
 function setDraftBusy(busy) {
-  $('#copy-output').disabled = busy || state.selected.size === 0;
-  $('#download-output').disabled = busy;
+  draftBusy = busy;
+  syncDraftActions();
 }
 
 function regenerate() {
@@ -866,19 +930,24 @@ function reset({ updateHistory = true } = {}) {
   state.signal = 'logs';
   state.analysisId = null;
   state.findings = [];
+  state.selected = new Set();
   state.artifacts = null;
   state.signalArtifacts = null;
+  closeDraftModal();
   $('#workbench-view').hidden = true;
   $('#connect-view').hidden = false;
   $('#analysis-results').hidden = true;
   $('#signal-results').hidden = true;
   $('#loading-state').hidden = true;
   $('#empty-state').hidden = false;
+  syncDraftActions();
   document.title = 'Telemetry Diet';
   if (updateHistory) navigate('/');
 }
 
 async function restoreRoute() {
+  if (analysisInFlight) cancelPendingAnalysis();
+  closeDraftModal();
   const generation = ++routeGeneration;
   const pathname = window.location.pathname;
   const isCurrent = () => generation === routeGeneration && window.location.pathname === pathname;
@@ -954,10 +1023,16 @@ $$('#change-filters .chip').forEach((chip) => chip.addEventListener('click', () 
 // View draft opens the full draft in a modal — a 300px config column is too
 // cramped to read YAML/JSON. <dialog> gives us backdrop + Esc for free.
 const draftModal = $('#draft-modal');
-$('#toggle-config').addEventListener('click', () => {
+function openDraft() {
+  if (!draftActionsReady() || draftBusy) return;
   renderOutput();
   if (typeof draftModal.showModal === 'function') draftModal.showModal();
   $('#draft-modal-close').focus();
+}
+$('#toggle-config').addEventListener('click', openDraft);
+$('#analysis-empty-report').addEventListener('click', () => {
+  state.output = 'markdown';
+  openDraft();
 });
 $('#draft-modal-close').addEventListener('click', () => draftModal.close());
 draftModal.addEventListener('click', (event) => { if (event.target === draftModal) draftModal.close(); });
@@ -974,6 +1049,7 @@ draftModal.addEventListener('click', (event) => { if (event.target === draftModa
   $('#cost-gb').addEventListener('input', persist);
 })();
 async function copyDraft() {
+  if (draftBusy || !draftActionsReady()) return;
   try {
     await navigator.clipboard.writeText(currentOutput());
     toast('Current draft copied.', true);
@@ -982,6 +1058,7 @@ async function copyDraft() {
   }
 }
 function downloadDraft() {
+  if (draftBusy || !draftActionsReady()) return;
   const meta = outputMeta[state.output];
   const url = URL.createObjectURL(new Blob([currentOutput()], { type: meta.type }));
   const link = document.createElement('a');

@@ -26,6 +26,13 @@ function fakeElement({ id = '', provider } = {}) {
   };
 }
 
+test('connect view keeps the required sample proof points', async () => {
+  const html = await readFile(new URL('../web/index.html', import.meta.url), 'utf8');
+  for (const copy of ['2,000', '~38%', '3', '2', 'high-cardinality fields', 'OTel Collector config ready', 'Last9 draft ready']) {
+    assert.match(html, new RegExp(copy.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  }
+});
+
 test('refresh preserves a provider route when OAuth must be resumed interactively', async () => {
   const source = await readFile(new URL('../web/app.js', import.meta.url), 'utf8');
   const historyCalls = [];

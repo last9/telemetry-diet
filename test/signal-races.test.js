@@ -131,6 +131,10 @@ test('analyze ignores a completion after the selected signal changes', async () 
   await new Promise((resolve) => setImmediate(resolve));
 
   vm.runInContext("selectSignal('metrics')", harness.context);
+  const request = harness.requests.find(({ path }) => path === '/api/analyze');
+  assert.equal(request.options.signal.aborted, true, 'signal switch aborts the browser request');
+  assert.equal(harness.element('#loading-state').hidden, true, 'loader returns to the ready state');
+  assert.equal(harness.element('#analyze-button').disabled, false, 'Analyze is re-enabled after cancellation');
   harness.respond('/api/analyze', {
     analysisId: 'old-log-analysis',
     analysisType: 'logs',
@@ -143,8 +147,36 @@ test('analyze ignores a completion after the selected signal changes', async () 
   assert.equal(vm.runInContext('state.signal', harness.context), 'metrics');
   assert.equal(vm.runInContext('state.analysisId', harness.context), null);
   assert.equal(harness.historyCalls.some((path) => path.includes('/results/old-log-analysis')), false);
-  const payload = JSON.parse(harness.requests.find(({ path }) => path === '/api/analyze').options.body);
+  const payload = JSON.parse(request.options.body);
   assert.equal(payload.signal, 'logs');
+});
+
+test('restoring a browser route aborts an analysis from the previous route', async () => {
+  const harness = await createHarness();
+  vm.runInContext("state.provider = 'sample'; state.signal = 'logs'", harness.context);
+  harness.element('#workbench-view').hidden = false;
+  const analysis = vm.runInContext('analyze()', harness.context);
+  await new Promise((resolve) => setImmediate(resolve));
+  const request = harness.requests.find(({ path }) => path === '/api/analyze');
+
+  harness.location.pathname = '/workbench';
+  harness.location.search = '?provider=sample&signal=logs&service=api&window=6';
+  await vm.runInContext('restoreRoute()', harness.context);
+
+  assert.equal(request.options.signal.aborted, true);
+  assert.equal(harness.element('#loading-state').hidden, true);
+  assert.equal(harness.element('#empty-state').hidden, false);
+  assert.equal(harness.element('#analyze-button').disabled, false);
+
+  harness.respond('/api/analyze', {
+    analysisId: 'cancelled-analysis',
+    analysisType: 'logs',
+    summary: { service: 'api', timeWindow: { start: new Date(0).toISOString(), end: new Date(1).toISOString() }, recordsAnalyzed: 0 },
+    findings: [],
+    artifacts: { selectedIds: [], preview: { recordsAnalyzed: 0, recordsAfter: 0, directionalReductionPercent: 0, caveat: '' }, otel: '', last9: {}, markdown: '' },
+  });
+  await analysis;
+  assert.equal(harness.historyCalls.some((path) => path.includes('/results/cancelled-analysis')), false);
 });
 
 test('an older route restore cannot overwrite a newer result route', async () => {

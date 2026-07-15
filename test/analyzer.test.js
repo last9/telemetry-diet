@@ -30,7 +30,10 @@ test('default policy preview preserves the 38 percent sample impact', () => {
 });
 
 test('generated artifacts are visible drafts with safety markers', () => {
-  const summary = getScenarioSummary('checkout-api', 'production', timeWindow);
+  const summary = {
+    ...getScenarioSummary('checkout-api', 'production', timeWindow),
+    limitations: ['Provider returned a partial aggregate; manual review is required.'],
+  };
   const findings = analyzeTelemetry(summary);
   const artifacts = generateArtifacts(summary, findings);
   assert.match(artifacts.otel, /filter\/telemetry_diet/);
@@ -39,6 +42,7 @@ test('generated artifacts are visible drafts with safety markers', () => {
   assert.equal(artifacts.last9.apply, false);
   assert.match(artifacts.markdown, /AI explains\. Analyzer proves\. Human applies\./);
   assert.match(artifacts.markdown, /Raw logs were not sent to an AI service/);
+  assert.match(artifacts.markdown, /Provider limitation: Provider returned a partial aggregate/);
 });
 
 test('redaction removes emails, bearer values, tokens, and request identifiers', () => {

@@ -24,10 +24,11 @@ function analysisData(selectedIds) {
 
 function makeEl(tag = '') {
   const listeners = {};
+  const attributes = new Map();
   const el = {
     tagName: tag.toUpperCase(),
     dataset: {}, className: '', id: '', textContent: '', value: '', title: '',
-    hidden: false, disabled: false, options: [], style: {},
+    hidden: false, disabled: false, open: false, options: [], style: {},
     classList: {
       set: new Set(),
       add(c) { this.set.add(c); }, remove(c) { this.set.delete(c); },
@@ -36,9 +37,13 @@ function makeEl(tag = '') {
     },
     addEventListener(type, fn) { (listeners[type] || (listeners[type] = [])).push(fn); },
     dispatch(type) { (listeners[type] || []).forEach((fn) => fn({ stopPropagation() {}, preventDefault() {} })); },
-    append() {}, replaceChildren() {}, removeAttribute() {}, setAttribute() {}, getAttribute() {},
+    append() {}, replaceChildren() {},
+    removeAttribute(name) { attributes.delete(name); },
+    setAttribute(name, value) { attributes.set(name, String(value)); },
+    getAttribute(name) { return attributes.get(name); },
     querySelector() { return makeEl(); }, querySelectorAll() { return []; },
     getBoundingClientRect() { return { top: 0, bottom: 0 }; }, scrollIntoView() {}, focus() {},
+    close() { this.open = false; }, showModal() { this.open = true; },
   };
   return el;
 }
@@ -48,6 +53,7 @@ function setup(selectedIds) {
   const els = new Map();
   const generateQueue = [];
   const timers = new Map();
+  const storage = new Map();
   let timerSeq = 0;
   const resp = (value) => ({ ok: true, json: async () => value });
 
@@ -74,6 +80,10 @@ function setup(selectedIds) {
     clearTimeout: (id) => { timers.delete(id); },
     setInterval: () => 0, clearInterval() {},
     navigator: { clipboard: { writeText: async () => {} } },
+    localStorage: {
+      getItem: (key) => storage.get(key) ?? null,
+      setItem: (key, value) => storage.set(key, value),
+    },
     document: {
       title: '',
       createElement: (tag) => { const el = makeEl(tag); registry.push(el); return el; },
@@ -134,7 +144,7 @@ test('newest selection wins when /api/generate responses arrive out of order', a
   assert.equal(h.query('#output-code').textContent, 'GEN2', 'stale older response must not overwrite');
 });
 
-test('switching signal mid-generation cancels it and re-enables Download', async () => {
+test('switching signal mid-generation cancels it and leaves the stale log draft unavailable', async () => {
   const h = await boot(['f1']);
   const [incF1] = includeButtons(h);
 
@@ -143,7 +153,7 @@ test('switching signal mid-generation cancels it and re-enables Download', async
   assert.equal(h.query('#download-output').disabled, true, 'Download disabled while pending');
 
   h.signalButtons[1].dispatch('click'); // navigate to traces → cancelRegeneration
-  assert.equal(h.query('#download-output').disabled, false, 'Download re-enabled after cancel');
+  assert.equal(h.query('#download-output').disabled, true, 'old log Download stays unavailable after navigation');
 
   h.generateQueue[0].resolve({ artifacts: { ...analysisData([]).artifacts, otel: 'GEN_LATE' } }); await tick();
   assert.equal(h.query('#output-code').textContent, 'OTEL0', 'cancelled generation must not commit');
@@ -162,4 +172,58 @@ test('a failed generation rolls the selection back to the committed artifacts', 
   assert.equal(h.query('#copy-output').disabled, false, 'Copy re-enabled and selection non-empty after rollback');
   const restored = includeButtons(h).some((b) => b.textContent === '✓ In config');
   assert.ok(restored, 'row re-rendered with the rolled-back selection');
+});
+
+test('all draft actions stay disabled through regeneration and baseline edits', async () => {
+  const h = await boot(['f1']);
+  const [, incF2] = includeButtons(h);
+  const actionSelectors = ['#copy-output', '#download-output', '#toggle-config', '#modal-copy', '#modal-download'];
+
+  incF2.dispatch('click');
+  actionSelectors.forEach((selector) => assert.equal(h.query(selector).disabled, true, `${selector} disabled while pending`));
+
+  h.query('#cost-gb').value = '0';
+  h.query('#cost-gb').dispatch('input');
+  actionSelectors.forEach((selector) => assert.equal(h.query(selector).disabled, true, `${selector} stays disabled after baseline render`));
+
+  flushTimers(h); await tick();
+  h.generateQueue[0].resolve({ artifacts: { ...analysisData(['f1', 'f2']).artifacts, otel: 'GEN' } }); await tick();
+  actionSelectors.forEach((selector) => assert.equal(h.query(selector).disabled, false, `${selector} re-enabled for committed draft`));
+});
+
+test('zero baseline values are honored instead of replaced by defaults', async () => {
+  const h = await boot(['f1']);
+
+  h.query('#cost-gb').value = '0';
+  h.query('#cost-gb').dispatch('input');
+  assert.equal(h.query('#savings-cost').textContent, '≈$0');
+
+  h.query('#ingest-gb').value = '0';
+  h.query('#ingest-gb').dispatch('input');
+  assert.equal(h.query('#savings-data').textContent, '—');
+  assert.equal(h.query('#savings-cost').textContent, '—');
+});
+
+test('a limited zero-finding analysis stays neutral and keeps its report exportable', async () => {
+  const h = await boot(['f1']);
+  const empty = {
+    ...analysisData([]),
+    findings: [],
+    summary: {
+      ...analysisData([]).summary,
+      recordsAnalyzed: 25,
+      limitations: ['Provider marked this aggregate as partial.'],
+    },
+    artifacts: { ...analysisData([]).artifacts, selectedIds: [], markdown: 'EMPTY REPORT' },
+  };
+
+  vm.runInContext(`renderAnalysis(${JSON.stringify(empty)})`, h.context);
+
+  assert.equal(h.query('#analysis-empty').hidden, false);
+  assert.equal(h.query('#analysis-empty-title').textContent, 'No changes proposed');
+  assert.match(h.query('#analysis-empty-copy').textContent, /coverage was limited/);
+  assert.equal(h.query('#log-limitations').hidden, false);
+  assert.equal(h.query('#output-code').textContent, 'EMPTY REPORT');
+  assert.equal(h.query('#analysis-empty-report').disabled, false);
+  assert.equal(h.query('#modal-copy').disabled, false, 'the generated Markdown report remains exportable');
 });

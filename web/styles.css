@@ -86,6 +86,9 @@ button { cursor: pointer; }
 .sample-metrics strong { color: var(--ink); }
 .sample-metrics .metric-amber strong { color: var(--noise); }
 .sample-metrics .metric-rose strong { color: var(--risk); }
+.sample-metrics .metric-blue strong { color: #8AA6EC; }
+.sample-ready { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 9px; font-family: var(--mono); font-size: 10.5px; color: var(--keep); }
+.sample-ready span::before { content: "✓"; margin-right: 5px; }
 
 .trust-strip { display: flex; align-items: center; gap: 26px; flex-wrap: wrap; padding: 14px 5vw; border-top: 1px solid var(--edge); background: #0B1013; font-family: var(--mono); font-size: 10.5px; letter-spacing: .04em; text-transform: uppercase; color: var(--faint); }
 .trust-strip b { color: var(--keep); }
@@ -153,6 +156,7 @@ button { cursor: pointer; }
 .analysis-empty.no-logs .ae-mark::before { content: "∅"; color: var(--muted); }
 .analysis-empty h2 { margin: 6px 0 0; font-size: 17px; }
 .analysis-empty p { margin: 0; max-width: 42ch; color: var(--muted); font-size: 13px; line-height: 1.6; }
+.analysis-empty .quiet-button { margin-top: 8px; }
 
 .changes-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px; }
 .changes-head h2 { margin: 0; font-size: 15px; }
@@ -189,6 +193,7 @@ button { cursor: pointer; }
 .ev-label { font-family: var(--mono); font-size: 10px; letter-spacing: .04em; text-transform: uppercase; color: var(--faint); margin-bottom: 7px; }
 .ev-label span { text-transform: none; letter-spacing: 0; color: var(--muted); }
 .ev-note { margin: 0; font-size: 12px; color: var(--muted); line-height: 1.55; }
+.finding-warning { margin: 10px 0 0; padding-left: 9px; border-left: 2px solid var(--noise); font-size: 11.5px; color: var(--muted); line-height: 1.55; }
 .samples { background: #0C1215; border: 1px solid var(--edge-soft); border-radius: 7px; padding: 9px 12px; overflow-x: auto; }
 .sline { font-family: var(--mono); font-size: 11.5px; line-height: 1.85; color: #9FB0AA; white-space: nowrap; }
 .samples .hl { border-radius: 3px; padding: 1px 3px; color: var(--ink); box-shadow: inset 0 -2px 0 var(--edge); }
@@ -229,6 +234,7 @@ button { cursor: pointer; }
 .cfg-actions button { flex: 1; height: 34px; border: 1px solid var(--edge); background: var(--panel-2); color: var(--muted); border-radius: 7px; font-size: 11.5px; }
 .cfg-actions button:hover { color: var(--ink); border-color: var(--faint); }
 .cfg-cav { margin: 12px 0 0; font-size: 11px; color: var(--faint); line-height: 1.5; }
+.log-limitations { margin-top: 18px; }
 
 /* View draft → modal popup (native <dialog>, gets backdrop + Esc for free) */
 .draft-modal { width: min(760px, 92vw); max-height: 82vh; padding: 0; border: 1px solid var(--edge); border-radius: 12px; background: var(--panel); color: var(--ink); box-shadow: 0 30px 80px -30px #000; }

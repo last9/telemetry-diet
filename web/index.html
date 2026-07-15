@@ -50,7 +50,9 @@
               <span><strong>2,000</strong> events</span>
               <span class="metric-amber"><strong>~38%</strong> trimmable</span>
               <span class="metric-rose"><strong>3</strong> risky fields</span>
+              <span class="metric-blue"><strong>2</strong> high-cardinality fields flagged</span>
             </div>
+            <div class="sample-ready"><span>OTel Collector config ready</span><span>Last9 draft ready</span></div>
           </section>
         </div>
       </section>
@@ -76,7 +78,7 @@
         <label class="scope-field" id="service-control"><span>Service</span><select id="service-select"></select></label>
         <label class="scope-field" id="environment-control"><span>Environment</span><select id="environment-select"></select></label>
         <label class="scope-field" id="window-control"><span>Window</span><select id="window-select"><option value="1">Last 1 hour</option><option value="6" selected>Last 6 hours</option><option value="24">Last 24 hours</option><option value="168">Last 7 days</option></select></label>
-        <span class="segmented" role="group" aria-label="Signal"><button type="button" class="active" data-signal="logs">Logs</button><button type="button" data-signal="traces">Traces</button><button type="button" data-signal="metrics">Metrics</button></span>
+        <span class="segmented" role="group" aria-label="Signal"><button type="button" class="active" data-signal="logs" aria-pressed="true">Logs</button><button type="button" data-signal="traces" aria-pressed="false">Traces</button><button type="button" data-signal="metrics" aria-pressed="false">Metrics</button></span>
         <button id="analyze-button" class="primary-button"><span aria-hidden="true">▶</span> <span id="analyze-label">Analyze selected window</span></button>
         <span class="conn-chip" title="Read-only MCP tool session"><i class="status-dot"></i><strong id="connection-name">Sample MCP connected</strong><small id="connection-tools">Read-only tool session</small></span>
       </div>
@@ -99,13 +101,14 @@
               <h1 id="results-title">checkout-api</h1>
               <p id="results-scope"></p>
             </div>
-            <div class="review-total"><strong id="records-total">0</strong><span>events scanned</span></div>
+            <div class="review-total"><strong id="records-total">0</strong><span id="records-total-label">events scanned</span></div>
           </div>
 
           <div id="analysis-empty" class="analysis-empty" hidden>
             <div class="ae-mark" aria-hidden="true"></div>
             <h2 id="analysis-empty-title">Nothing to trim</h2>
             <p id="analysis-empty-copy"></p>
+            <button type="button" id="analysis-empty-report" class="quiet-button">View generated report</button>
           </div>
 
           <div class="review-grid">
@@ -115,11 +118,11 @@
                 <span id="finding-count">0 · 0 in config</span>
               </div>
               <div class="change-filters" id="change-filters" role="group" aria-label="Filter proposed changes by type">
-                <button type="button" class="chip active" data-filter="all">All</button>
-                <button type="button" class="chip" data-filter="noise">Volume</button>
-                <button type="button" class="chip" data-filter="risk">Privacy</button>
-                <button type="button" class="chip" data-filter="cardinality">Cardinality</button>
-                <button type="button" class="chip" data-filter="drift">Naming</button>
+                <button type="button" class="chip active" data-filter="all" aria-pressed="true">All</button>
+                <button type="button" class="chip" data-filter="noise" aria-pressed="false">Volume</button>
+                <button type="button" class="chip" data-filter="risk" aria-pressed="false">Privacy</button>
+                <button type="button" class="chip" data-filter="cardinality" aria-pressed="false">Cardinality</button>
+                <button type="button" class="chip" data-filter="drift" aria-pressed="false">Naming</button>
               </div>
               <div id="findings-list" class="changes"></div>
             </section>
@@ -145,9 +148,9 @@
                 <div class="cfg-head"><h2>Your config</h2><span id="cfg-count">0 changes</span></div>
                 <div id="cfg-breakdown" class="cfg-breakdown"></div>
                 <div class="output-tabs fmt" role="tablist">
-                  <button class="active" data-output="otel" role="tab">OTel</button>
-                  <button data-output="last9" role="tab">Last9</button>
-                  <button data-output="markdown" role="tab">Report</button>
+                  <button type="button" class="active" data-output="otel" role="tab" aria-selected="true">OTel</button>
+                  <button type="button" data-output="last9" role="tab" aria-selected="false">Last9</button>
+                  <button type="button" data-output="markdown" role="tab" aria-selected="false">Report</button>
                 </div>
                 <button id="copy-output" class="cfg-copy">Copy OTel config</button>
                 <div class="cfg-actions">
@@ -158,6 +161,10 @@
               </section>
             </aside>
           </div>
+          <section id="log-limitations" class="limitations-panel log-limitations" hidden>
+            <p class="eyebrow">PROVIDER LIMITATIONS</p>
+            <ul id="log-limitations-list"></ul>
+          </section>
         </div>
 
         <!-- TRACES / METRICS: existing structure, reskinned via shared classes -->
@@ -202,9 +209,9 @@
       <div class="draft-modal-head">
         <h2 id="draft-modal-title">Generated draft</h2>
         <div class="output-tabs fmt" role="tablist">
-          <button class="active" data-output="otel" role="tab">OTel</button>
-          <button data-output="last9" role="tab">Last9</button>
-          <button data-output="markdown" role="tab">Report</button>
+          <button type="button" class="active" data-output="otel" role="tab" aria-selected="true">OTel</button>
+          <button type="button" data-output="last9" role="tab" aria-selected="false">Last9</button>
+          <button type="button" data-output="markdown" role="tab" aria-selected="false">Report</button>
         </div>
         <button id="draft-modal-close" class="draft-modal-close" aria-label="Close draft">✕</button>
       </div>
