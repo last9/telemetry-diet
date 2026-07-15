@@ -72,6 +72,14 @@ function toast(message, success = false) {
   toastTimer = setTimeout(() => { element.className = 'toast'; }, 4200);
 }
 
+function revealWhenOutsideViewport(element) {
+  window.requestAnimationFrame(() => {
+    const bounds = element.getBoundingClientRect();
+    const visible = bounds.top >= 0 && bounds.top < window.innerHeight && bounds.bottom > 0;
+    if (!visible) element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+}
+
 function setOptions(select, values, emptyLabel = 'No values returned') {
   select.replaceChildren();
   if (!values.length) {
@@ -263,6 +271,7 @@ function renderAnalysis(data) {
   renderOutput();
   $('#loading-state').hidden = true;
   $('#analysis-results').hidden = false;
+  revealWhenOutsideViewport($('#analysis-results'));
 }
 
 async function analyze() {
@@ -271,6 +280,7 @@ async function analyze() {
   $('#empty-state').hidden = true;
   $('#analysis-results').hidden = true;
   $('#loading-state').hidden = false;
+  revealWhenOutsideViewport($('#loading-state'));
   const loadingSteps = ['Fetching provider summaries…', 'Checking deterministic fingerprints…', 'Generating visible policy drafts…'];
   let step = 0;
   const interval = setInterval(() => { $('#loading-copy').textContent = loadingSteps[Math.min(++step, loadingSteps.length - 1)]; }, 650);
