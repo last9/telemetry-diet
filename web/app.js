@@ -194,6 +194,8 @@ function cancelPendingAnalysis() {
 function cancelRegeneration() {
   clearTimeout(generationTimer);
   generationTimer = undefined;
+  regenToken += 1;     // supersede any scheduled or in-flight generation
+  setDraftBusy(false); // never leave Copy/Download stuck disabled after a cancel
 }
 
 function selectSignal(signal) {
