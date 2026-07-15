@@ -331,7 +331,7 @@ function evidenceLabel(finding) {
   if (finding.category === 'drift') return `Conflicting fields — ${formatNumber(finding.affectedCount)} affected`;
   return finding.examplesRedacted.length
     ? `Matched log lines · redacted — ${finding.examplesRedacted.length} of ${formatNumber(finding.affectedCount)}`
-    : `No sample available · matched by field name in ${formatNumber(finding.affectedCount)} records`;
+    : `Matched by field name · ${formatNumber(finding.affectedCount)} records`;
 }
 
 // One proposed-change row: verb · title · impact · include/skip, with a
@@ -415,16 +415,28 @@ function renderChange(finding) {
   const evLabel = document.createElement('div');
   evLabel.className = 'ev-label';
   evLabel.textContent = evidenceLabel(finding);
-  const samples = document.createElement('div');
-  samples.className = 'samples';
-  const lines = finding.examplesRedacted.length ? finding.examplesRedacted : ['No sample returned by the provider.'];
-  lines.forEach((line) => {
-    const sline = document.createElement('div');
-    sline.className = 'sline';
-    sline.textContent = line;
-    samples.append(sline);
-  });
-  detail.append(why, evLabel, samples);
+  detail.append(why, evLabel);
+
+  if (finding.examplesRedacted.length) {
+    const samples = document.createElement('div');
+    samples.className = 'samples';
+    finding.examplesRedacted.forEach((line) => {
+      const sline = document.createElement('div');
+      sline.className = 'sline';
+      sline.textContent = line;
+      samples.append(sline);
+    });
+    detail.append(samples);
+  } else {
+    // No example values came back (e.g. the provider's bounded read didn't surface
+    // this field). Explain that the finding is name-based, not a failure.
+    const note = document.createElement('p');
+    note.className = 'ev-note';
+    const parts = ['The provider returned no example values for this field in the sampled window, so there is nothing to preview.'];
+    if (finding.warning) parts.push(finding.warning);
+    note.textContent = parts.join(' ');
+    detail.append(note);
+  }
 
   disclosure.addEventListener('click', () => {
     const open = detail.hidden;
