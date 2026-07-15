@@ -14,16 +14,44 @@ npx telemetry-diet
 
 The command starts a local app on `127.0.0.1` and opens the workbench. Datadog and Last9 authentication happens on the providers' own consent pages; OAuth tokens are held in the local process and are not exposed to the browser app. Node.js 22 or newer is required.
 
-## Fast demo: no credentials
+## Run locally from source
 
-From this repository:
+Prerequisites: Git, Node.js 20 or newer, and npm.
 
 ```bash
+git clone https://github.com/last9/telemetry-diet.git
+cd telemetry-diet
 npm install
 npm start
 ```
 
-Open the printed local URL, then:
+`npm start` runs the local workbench without opening a browser automatically. Open the URL printed in the terminal, normally `http://127.0.0.1:4545`. No hosted backend, database, or credentials are required for the sample MCP path.
+
+Use watch mode while developing:
+
+```bash
+npm run dev
+```
+
+To use another port:
+
+```bash
+npm start -- --port 4571
+```
+
+Stop the local server with `Ctrl+C`. Before submitting changes, run:
+
+```bash
+npm test
+npm run check
+npm run pack:check
+```
+
+Provider environment variables can be set in the same shell before `npm start`; see [Datadog MCP](#connect-datadog-mcp), [Last9 MCP](#connect-last9-mcp), and the detailed [provider setup guide](docs/mcp-providers.md).
+
+## Fast demo: no credentials
+
+With the local app running:
 
 1. Click **Connect sample MCP**.
 2. Keep `checkout-api`, `production`, and `Last 6 hours` selected.
@@ -181,14 +209,6 @@ src/providers/       sample, Datadog, and Last9 adapters
 src/sample/          bundled sample scenario
 web/                 dependency-free local workbench
 test/                deterministic and MCP integration tests
-```
-
-Run project checks with:
-
-```bash
-npm test
-npm run check
-npm run pack:check
 ```
 
 ## Reddit-ready demo flow
