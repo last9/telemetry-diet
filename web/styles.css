@@ -78,9 +78,10 @@ button { cursor: pointer; }
 
 .sample-result { margin-top: 8px; border: 1px solid var(--edge); border-radius: 10px; background: var(--panel); padding: 13px 14px; }
 .sample-result .eyebrow { margin-bottom: 10px; }
+/* Fixed 62/38 sample split via flex ratios — the CSP forbids inline styles. */
 .sample-bar { height: 14px; display: flex; border-radius: 4px; overflow: hidden; }
-.sample-bar i { display: block; background: var(--kept-bar); }
-.sample-bar b { display: block; background: var(--noise); }
+.sample-bar i { flex: 62 1 0; background: var(--kept-bar); }
+.sample-bar b { flex: 38 1 0; background: var(--noise); }
 .sample-metrics { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 11px; font-family: var(--mono); font-size: 11.5px; color: var(--muted); }
 .sample-metrics strong { color: var(--ink); }
 .sample-metrics .metric-amber strong { color: var(--noise); }
