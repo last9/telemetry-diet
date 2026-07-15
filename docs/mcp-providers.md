@@ -61,6 +61,21 @@ The Last9 adapter follows the provider's response contracts directly: service su
 
 Telemetry Diet does not look up or call `add_drop_rule`. The Last9 JSON output sets `draft: true` and `apply: false`.
 
+### Metric usage capabilities
+
+Metric usage inspects the MCP tool catalog and accepts only capabilities advertised as read-only and non-destructive. It requires:
+
+- a metric-name inventory; and
+- at least one reference source covering native dashboards, embedded Grafana dashboards, alerts, or entity indicators.
+
+Each query is normalized with its source type, source ID, display path, and update timestamp when supplied. If inventory collection fails, no metric names are returned, or every reference scan fails, the analysis stops instead of producing an incomplete “unused” list.
+
+### Trace Intelligence capabilities
+
+Trace Intelligence prefers a read-only aggregate trace analysis tool. When no aggregate tool exists, it accepts only a recognized trace-search tool with a limit argument and requests no more than 200 records. The fallback groups records locally and discards raw spans; it never returns attribute values, trace/span IDs, credentials, or upstream error payloads.
+
+Missing byte measurements remain unknown rather than being inferred. An unrecognized or unbounded tool contract fails closed.
+
 ## Normalization and redaction
 
 Provider results are normalized locally into fields, message fingerprints, endpoint aggregates, policy summaries, and scope metadata. If a provider returns structured records, Telemetry Diet:

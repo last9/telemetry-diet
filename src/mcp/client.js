@@ -133,14 +133,29 @@ export class HttpMcpClient extends BaseClient {
       ...(this.options.headers || {}),
     };
     if (this.sessionId) headers['mcp-session-id'] = this.sessionId;
-    const response = await fetch(this.url, { method: 'POST', headers, body: JSON.stringify(payload) });
-    if (!response.ok) throw new Error(`MCP HTTP ${response.status}: ${(await response.text()).slice(0, 500)}`);
-    this.sessionId = response.headers.get('mcp-session-id') || this.sessionId;
-    if (response.status === 202) return null;
-    const text = await response.text();
-    const message = response.headers.get('content-type')?.includes('text/event-stream') ? parseSse(text) : JSON.parse(text);
-    if (message?.error) throw new Error(message.error.message);
-    return message?.result;
+    const controller = new AbortController();
+    const configuredTimeout = Number(this.options.timeout);
+    const timeout = Number.isFinite(configuredTimeout) && configuredTimeout > 0
+      ? Math.min(configuredTimeout, 180000)
+      : 30000;
+    const timer = setTimeout(() => controller.abort(), timeout);
+    try {
+      const response = await fetch(this.url, {
+        method: 'POST', headers, body: JSON.stringify(payload), signal: controller.signal,
+      });
+      if (!response.ok) throw new Error(`MCP HTTP ${response.status}: ${(await response.text()).slice(0, 500)}`);
+      this.sessionId = response.headers.get('mcp-session-id') || this.sessionId;
+      if (response.status === 202) return null;
+      const text = await response.text();
+      const message = response.headers.get('content-type')?.includes('text/event-stream') ? parseSse(text) : JSON.parse(text);
+      if (message?.error) throw new Error(message.error.message);
+      return message?.result;
+    } catch (error) {
+      if (controller.signal.aborted) throw new Error(`MCP HTTP request timed out: ${payload.method}`);
+      throw error;
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   request(method, params) {
@@ -170,7 +185,10 @@ export async function createMcpClient(config) {
   if (config.oauthClient) {
     client = config.oauthClient;
   } else if (config.url) {
-    client = new HttpMcpClient(config.url, { headers: config.token ? { authorization: `Bearer ${config.token}` } : {} });
+    client = new HttpMcpClient(config.url, {
+      headers: config.token ? { authorization: `Bearer ${config.token}` } : {},
+      timeout: config.timeout,
+    });
   } else {
     const parsed = parseCommand(config.command, config.args);
     if (!parsed?.executable) throw new Error(`${config.label} MCP is not configured. Set ${config.envPrefix}_MCP_URL or ${config.envPrefix}_MCP_COMMAND.`);

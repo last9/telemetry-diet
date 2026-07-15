@@ -9,6 +9,7 @@ import { OAuthRequiredError, OAuthSessionManager } from './mcp/oauth-client.js';
 import { createProvider } from './providers/index.js';
 import { resolveDatadogMcpConfig } from './providers/datadog.js';
 import { resolveLast9McpConfig } from './providers/last9.js';
+import { createSignalAnalysisStore } from './signals/analysis.js';
 
 const webRoot = fileURLToPath(new URL('../web', import.meta.url));
 const contentTypes = {
@@ -50,6 +51,7 @@ export function createTelemetryDietServer({ env = process.env } = {}) {
   const providers = new Map();
   const analyses = new Map();
   const oauth = new OAuthSessionManager();
+  const signalAnalyses = createSignalAnalysisStore({ env, oauth });
 
   async function closeProvider(provider) {
     const current = providers.get(provider);
@@ -75,6 +77,8 @@ export function createTelemetryDietServer({ env = process.env } = {}) {
     }
     const analysisMatch = request.method === 'GET' && url.pathname.match(/^\/api\/analysis\/([a-f0-9-]+)$/i);
     if (analysisMatch) {
+      const signalAnalysis = signalAnalyses.get(analysisMatch[1]);
+      if (signalAnalysis) return json(response, 200, signalAnalysis);
       const analysis = analyses.get(analysisMatch[1]);
       if (!analysis) return json(response, 404, { error: 'Analysis expired. Run the analysis again.' });
       return json(response, 200, {
@@ -114,6 +118,9 @@ export function createTelemetryDietServer({ env = process.env } = {}) {
       return json(response, 200, { environments: await adapter.getEnvironments(input.service) });
     }
     if (url.pathname === '/api/analyze') {
+      if (!['logs', 'metrics', 'traces'].includes(input.signal || 'logs')) throw new Error('Choose a supported telemetry signal.');
+      const signalAnalysis = await signalAnalyses.analyze(input, validateTimeWindow);
+      if (signalAnalysis) return json(response, 200, signalAnalysis);
       const adapter = providers.get(input.provider);
       if (!adapter) throw new Error(`Connect ${input.provider} MCP first.`);
       if (!input.service) throw new Error('Choose a service.');
