@@ -6,11 +6,11 @@ function buildFilterExpressions(findings) {
   const expressions = [];
   for (const finding of findings) {
     if (finding.rule.kind === 'health-check') {
-      const paths = finding.rule.paths.map((path) => `attributes[\"url.path\"] == ${quote(path)}`).join(' or ');
-      expressions.push(`attributes[\"http.response.status_code\"] >= 200 and attributes[\"http.response.status_code\"] < 300 and (${paths})`);
+      const paths = finding.rule.paths.map((path) => `attributes["url.path"] == ${quote(path)}`).join(' or ');
+      expressions.push(`attributes["http.response.status_code"] >= 200 and attributes["http.response.status_code"] < 300 and (${paths})`);
     }
     if (finding.rule.kind === 'severity') {
-      expressions.push(`severity_number < SEVERITY_NUMBER_INFO and resource.attributes[\"deployment.environment.name\"] == ${quote(finding.rule.environment)}`);
+      expressions.push(`severity_number >= SEVERITY_NUMBER_TRACE and severity_number < SEVERITY_NUMBER_INFO and resource.attributes["deployment.environment.name"] == ${quote(finding.rule.environment)}`);
     }
   }
   return expressions;
@@ -76,7 +76,7 @@ export function generateLast9Policy(summary, findings) {
     if (finding.rule.kind === 'health-check') return [{
       name: 'Drop successful health-check logs',
       ruleType: 'drop_log',
-      filters: { all: [{ field: 'url.path', operator: 'in', values: finding.rule.paths }, { field: 'http.response.status_code', operator: 'lt', value: 300 }] },
+      filters: { all: [{ field: 'url.path', operator: 'in', values: finding.rule.paths }, { field: 'http.response.status_code', operator: 'gte', value: 200 }, { field: 'http.response.status_code', operator: 'lt', value: 300 }] },
       action: { type: 'drop' }, explanation: finding.suggestedAction, confidence: finding.confidence, sourceFinding: source,
     }];
     if (finding.rule.kind === 'severity') return [{
@@ -96,7 +96,14 @@ export function generateLast9Policy(summary, findings) {
     draft: true,
     apply: false,
     provider: summary.provider,
-    scope: { service: summary.service, environment: summary.environment, timeWindow: summary.timeWindow },
+    scope: {
+      service: summary.service ?? null,
+      environment: summary.environment ?? null,
+      timeWindow: {
+        start: summary.timeWindow.start,
+        end: summary.timeWindow.end,
+      },
+    },
     rules,
     warnings: [
       'DRAFT ONLY: Telemetry Diet does not apply this policy.',

@@ -510,11 +510,14 @@ function renderChanges() {
 // Toggle a change in place (preserves any expanded rows) and re-derive the
 // config + savings from the server.
 function readBaseline() {
-  let stored = {};
+  let stored;
   try { stored = JSON.parse(localStorage.getItem(BASELINE_KEY) || '{}'); } catch { stored = {}; }
-  const gb = Number(stored.gb);
-  const cost = Number(stored.cost);
-  return { gb: Number.isFinite(gb) && gb >= 0 ? gb : 40, cost: Number.isFinite(cost) && cost >= 0 ? cost : 0.5 };
+  const gb = stored.gb == null || stored.gb === '' ? null : Number(stored.gb);
+  const cost = stored.cost == null || stored.cost === '' ? null : Number(stored.cost);
+  return {
+    gb: Number.isFinite(gb) && gb >= 0 ? gb : null,
+    cost: Number.isFinite(cost) && cost >= 0 ? cost : null,
+  };
 }
 
 function formatGb(gb) { return gb >= 100 ? `${Math.round(gb)} GB` : `${gb.toFixed(1)} GB`; }
@@ -532,7 +535,7 @@ function renderSavings() {
   if (pct > 0 && baseline.gb > 0) {
     const gbSaved = baseline.gb * pct / 100;
     $('#savings-data').textContent = `≈${formatGb(gbSaved)}`;
-    $('#savings-cost').textContent = `≈${formatMoney(gbSaved * 30 * baseline.cost)}`;
+    $('#savings-cost').textContent = baseline.cost == null ? '—' : `≈${formatMoney(gbSaved * 30 * baseline.cost)}`;
   } else {
     $('#savings-data').textContent = '—';
     $('#savings-cost').textContent = '—';
@@ -540,7 +543,8 @@ function renderSavings() {
   const bits = [];
   if (events) bits.push(`≈${formatNumber(events)} records affected / window`);
   if (sensitive) bits.push(`${sensitive} sensitive attribute${sensitive > 1 ? 's' : ''} redacted`);
-  bits.push(`assumes ${baseline.gb} GB/day ingest, uniform event size`);
+  if (baseline.gb > 0) bits.push(`scenario uses ${baseline.gb} GB/day ingest and uniform event size`);
+  else bits.push('enter an ingest baseline to estimate GB and cost');
   // Keep the analyzer's own caveat — e.g. that overlapping drop categories make
   // the reduction an upper bound — rather than silently dropping it.
   const notes = [`Directional. ${bits.join(' · ')}. Nothing is applied.`];
@@ -1062,10 +1066,15 @@ $('#draft-modal-close').addEventListener('click', () => draftModal.close());
 draftModal.addEventListener('click', (event) => { if (event.target === draftModal) draftModal.close(); });
 (() => {
   const baseline = readBaseline();
-  $('#ingest-gb').value = baseline.gb;
-  $('#cost-gb').value = baseline.cost;
+  $('#ingest-gb').value = baseline.gb ?? '';
+  $('#cost-gb').value = baseline.cost ?? '';
   const persist = () => {
-    const stored = { gb: Number($('#ingest-gb').value), cost: Number($('#cost-gb').value) };
+    const gb = $('#ingest-gb').value;
+    const cost = $('#cost-gb').value;
+    const stored = {
+      gb: gb === '' ? null : Number(gb),
+      cost: cost === '' ? null : Number(cost),
+    };
     try { localStorage.setItem(BASELINE_KEY, JSON.stringify(stored)); } catch { /* storage unavailable */ }
     if (state.signal === 'logs' && state.artifacts) renderSavings();
   };

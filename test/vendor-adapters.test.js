@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { DatadogAdapter, resolveDatadogMcpConfig } from '../src/providers/datadog.js';
+import { DatadogAdapter, datadogAggregateQueries, resolveDatadogMcpConfig } from '../src/providers/datadog.js';
 import { Last9Adapter } from '../src/providers/last9.js';
 
 const timeWindow = { start: '2026-07-14T10:00:00.000Z', end: '2026-07-14T16:00:00.000Z' };
@@ -35,14 +35,15 @@ test('Datadog adapter uses service discovery and aggregate analysis read tools',
   assert.equal(summary.provider, 'datadog');
   assert.deepEqual(calls.map(({ name }) => name), ['search_datadog_services', 'analyze_datadog_logs']);
   assert.match(calls[1].args.sql_query, /COUNT\(\*\) AS records_analyzed/);
-  assert.equal(calls[1].args.filter, 'service:checkout-api env:prod');
+  assert.equal(calls[1].args.filter, 'service:"checkout-api" env:"prod"');
+  assert.match(calls[1].args.sql_query, /FROM logs WHERE service = 'checkout-api' AND env = 'prod'/);
 });
 
-test('Datadog detail fallback is summary-first, RBAC-scoped, and hard-bounded to 10 events', async () => {
+test('Datadog detail fallback is summary-first, RBAC-scoped, and locally capped at 10 events', async () => {
   const calls = [];
   const adapter = new DatadogAdapter({});
   adapter.analysisTool = { name: 'analyze_datadog_logs', inputSchema: { required: ['sql_query', 'telemetry'], properties: { sql_query: {}, filter: {}, extra_columns: {}, from: {}, to: {}, max_tokens: {}, telemetry: {} } } };
-  adapter.searchTool = { name: 'search_datadog_logs', inputSchema: { required: ['query', 'telemetry'], properties: { query: {}, max_tokens: {}, from: {}, to: {}, extra_fields: {}, telemetry: {} } } };
+  adapter.searchTool = { name: 'search_datadog_logs', inputSchema: { required: ['query', 'telemetry'], properties: { query: {}, limit: { maximum: 10 }, max_tokens: {}, from: {}, to: {}, extra_fields: {}, telemetry: {} } } };
   adapter.client = { callTool: async (name, args) => {
     calls.push({ name, args });
     if (name === 'analyze_datadog_logs' && calls.filter((call) => call.name === name).length === 1) {
@@ -59,11 +60,36 @@ test('Datadog detail fallback is summary-first, RBAC-scoped, and hard-bounded to
   const summary = await adapter.analyze({ service: 'checkout-api', environment: 'production', timeWindow });
   assert.deepEqual(calls.map(({ name }) => name), ['analyze_datadog_logs', 'analyze_datadog_logs', 'search_datadog_logs']);
   assert.equal(calls[2].args.max_tokens, 3000);
+  assert.equal(calls[2].args.limit, 10);
   assert.match(calls[0].args.sql_query, /COUNT\(DISTINCT "@user\.email"\)/);
   assert.match(calls[1].args.sql_query, /GROUP BY status, "@http\.url_details\.path"/);
   assert.equal(summary.recordsAnalyzed, 50);
   assert.doesNotMatch(JSON.stringify(summary), /alex@example\.com/);
   assert.match(JSON.stringify(summary.limitations), /RBAC/);
+});
+
+test('Datadog skips raw detail when the MCP tool cannot enforce a result limit', async () => {
+  const calls = [];
+  const adapter = new DatadogAdapter({});
+  adapter.analysisTool = { name: 'analyze_datadog_logs', inputSchema: { properties: { sql_query: {}, filter: {} } } };
+  adapter.searchTool = { name: 'search_datadog_logs', inputSchema: { properties: { query: {}, max_tokens: {} } } };
+  adapter.client = { callTool: async (name) => {
+    calls.push(name);
+    if (calls.length === 1) return { rows: [{ records_analyzed: 50, user_email_presence: 5, user_email_unique_count: 5 }] };
+    if (calls.length === 2) return { rows: [{ message: 'request complete', severity: 'INFO', record_count: 50 }] };
+    throw new Error('Unbounded detail tool must not be called.');
+  } };
+
+  const summary = await adapter.analyze({ service: 'checkout-api', environment: 'production', timeWindow });
+  assert.deepEqual(calls, ['analyze_datadog_logs', 'analyze_datadog_logs']);
+  assert.match(summary.limitations.join('\n'), /detail examples were skipped/i);
+});
+
+test('Datadog SQL scope escapes quote characters', () => {
+  const queries = datadogAggregateQueries("api' OR 1=1 --", "prod' --");
+  assert.match(queries.overview, /service = 'api'' OR 1=1 --'/);
+  assert.match(queries.overview, /env = 'prod'' --'/);
+  assert.equal((queries.overview.match(/FROM logs/g) || []).length, 1);
 });
 
 test('Last9 adapter reads summaries, attributes, environments, and existing rules without writes', async () => {

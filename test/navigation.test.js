@@ -33,6 +33,30 @@ test('connect view keeps the required sample proof points', async () => {
   }
 });
 
+test('public product contract stays outcome-led and explicit about beta scope', async () => {
+  const [html, readme, packageJson] = await Promise.all([
+    readFile(new URL('../web/index.html', import.meta.url), 'utf8'),
+    readFile(new URL('../README.md', import.meta.url), 'utf8'),
+    readFile(new URL('../package.json', import.meta.url), 'utf8'),
+  ]);
+  const manifest = JSON.parse(packageJson);
+
+  assert.match(html, /Find telemetry you can safely trim/);
+  assert.match(html, /Traces · beta/);
+  assert.match(html, /Metrics · beta/);
+  assert.match(html, /no hosted (?:Telemetry Diet )?backend/i);
+  assert.doesNotMatch(html, /Projected savings|AI explains/i);
+
+  assert.match(readme, /Logs are the primary supported workflow/);
+  assert.match(readme, /\| Log noise, privacy, and cardinality analysis \| Included \| Beta \| Supported \|/);
+  assert.match(readme, /This beta path is contract-tested/);
+  assert.match(readme, /\| Metric reference coverage \| Beta preview \| Not supported \| Beta preview \|/);
+  assert.match(readme, /\| Trace reduction candidates \| Beta preview \| Not supported \| Beta preview \|/);
+  assert.doesNotMatch(readme, /underused metrics|Reddit-ready|tested OTel|AI explains/i);
+
+  assert.equal(manifest.description, 'Local, read-only observability workbench for reviewable telemetry reduction drafts');
+});
+
 test('refresh preserves a provider route when OAuth must be resumed interactively', async () => {
   const source = await readFile(new URL('../web/app.js', import.meta.url), 'utf8');
   const historyCalls = [];
@@ -87,8 +111,8 @@ test('refresh preserves a provider route when OAuth must be resumed interactivel
   });
 
   vm.runInContext(source, context);
-  await new Promise((resolve) => setImmediate(resolve));
-  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => { setImmediate(resolve); });
+  await new Promise((resolve) => { setImmediate(resolve); });
 
   assert.ok(fetchCalls.includes('/api/connect'));
   assert.deepEqual(openCalls, []);

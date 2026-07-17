@@ -445,7 +445,7 @@ test('scopes a bounded search_traces fallback with the advertised query schema',
   assert.deepEqual(calls, [{
     name: 'search_traces',
     args: {
-      query: 'service:example-service env:production',
+      query: 'service:"example-service" env:"production"',
       from: '2026-07-15T00:00:00Z',
       to: '2026-07-15T01:00:00Z',
       limit: 200,

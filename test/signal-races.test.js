@@ -120,7 +120,7 @@ async function createHarness() {
   });
 
   vm.runInContext(source, context);
-  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => { setImmediate(resolve); });
   return { context, element, historyCalls, location, pending, requests, respond, timeouts };
 }
 
@@ -128,7 +128,7 @@ test('analyze ignores a completion after the selected signal changes', async () 
   const harness = await createHarness();
   vm.runInContext("state.provider = 'sample'; state.signal = 'logs'", harness.context);
   const analysis = vm.runInContext('analyze()', harness.context);
-  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => { setImmediate(resolve); });
 
   vm.runInContext("selectSignal('metrics')", harness.context);
   const request = harness.requests.find(({ path }) => path === '/api/analyze');
@@ -156,7 +156,7 @@ test('restoring a browser route aborts an analysis from the previous route', asy
   vm.runInContext("state.provider = 'sample'; state.signal = 'logs'", harness.context);
   harness.element('#workbench-view').hidden = false;
   const analysis = vm.runInContext('analyze()', harness.context);
-  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => { setImmediate(resolve); });
   const request = harness.requests.find(({ path }) => path === '/api/analyze');
 
   harness.location.pathname = '/workbench';
@@ -186,12 +186,12 @@ test('an older route restore cannot overwrite a newer result route', async () =>
   harness.location.pathname = '/results/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
   harness.location.search = '?provider=sample&signal=logs';
   const first = vm.runInContext('restoreRoute()', harness.context);
-  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => { setImmediate(resolve); });
 
   harness.location.pathname = '/results/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
   harness.location.search = '?provider=sample&signal=metrics';
   const second = vm.runInContext('restoreRoute()', harness.context);
-  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => { setImmediate(resolve); });
   harness.respond('/api/analysis/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', {
     analysisId: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
     analysisType: 'metrics',

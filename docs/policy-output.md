@@ -16,13 +16,13 @@ The generated YAML can include:
 - `transform/telemetry_diet` statements that delete risky attributes
 - resource normalization into `service.name` and `deployment.environment.name`
 
-The snippet is intentionally partial: add the processors to an existing logs pipeline after memory protection and before batching/export. OTTL attribute names, enum support, and processor versions differ across Collector distributions. Verify the draft with the exact Collector build and representative traffic.
+The snippet is intentionally partial: add the processors to an existing logs pipeline after memory protection and before batching/export. OTTL attribute names, enum support, and processor versions differ across Collector distributions. Verify the draft with the exact Collector build and representative traffic. Maintainers can parser-check representative log and trace drafts with `npm run validate:artifacts -- --collector /path/to/otelcol-contrib`.
 
 Fingerprint sampling and "remove from labels but keep in log body" are marked as unsupported portable semantics because they require backend- or pipeline-specific behavior.
 
 ## Last9 draft JSON
 
-The export schema is `telemetry-diet.last9-draft/v1` and always includes:
+The export schema is [`telemetry-diet.last9-draft/v1`](../schemas/telemetry-diet.last9-draft.v1.schema.json) and always includes:
 
 ```json
 {

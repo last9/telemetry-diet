@@ -14,7 +14,7 @@ async function startServer(t) {
   server.setBaseUrl(baseUrl);
   t.after(async () => {
     await server.closeProviders();
-    await new Promise((resolve) => server.close(resolve));
+    await new Promise((resolve) => { server.close(resolve); });
   });
   return baseUrl;
 }

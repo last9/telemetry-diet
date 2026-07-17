@@ -1,7 +1,7 @@
 {
   "name": "telemetry-diet",
   "version": "0.1.0",
-  "description": "Read-only telemetry analyzer for log policy, metric usage, and trace reduction drafts",
+  "description": "Local, read-only observability workbench for reviewable telemetry reduction drafts",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/last9/telemetry-diet.git"
@@ -10,6 +10,7 @@
   "bugs": {
     "url": "https://github.com/last9/telemetry-diet/issues"
   },
+  "author": "Last9 <hello@last9.io> (https://last9.io)",
   "type": "module",
   "bin": {
     "telemetry-diet": "bin/telemetry-diet.js",
@@ -17,9 +18,12 @@
   },
   "files": [
     "bin",
+    "schemas",
+    "scripts",
     "src",
     "web",
     "README.md",
+    "CHANGELOG.md",
     "LICENSE",
     "NOTICE"
   ],
@@ -28,11 +32,21 @@
     "dev": "node --watch bin/telemetry-diet.js --no-open",
     "sample:mcp": "node bin/sample-mcp.js",
     "test": "node --test",
-    "check": "node --check bin/telemetry-diet.js && node --check bin/sample-mcp.js && node --check src/server.js && node --check web/app.js",
-    "pack:check": "npm pack --dry-run"
+    "test:coverage": "node --test --experimental-test-coverage --test-coverage-include=\"src/**/*.js\" --test-coverage-lines=90 --test-coverage-branches=75 --test-coverage-functions=85",
+    "validate:artifacts": "node scripts/validate-artifacts.js",
+    "format:check": "node scripts/check-text-format.js",
+    "links:check": "node scripts/check-markdown-links.js",
+    "licenses:check": "node scripts/check-licenses.js",
+    "lint": "eslint .",
+    "syntax:check": "node scripts/check-syntax.js",
+    "check": "npm run format:check && npm run links:check && npm run lint && npm run syntax:check",
+    "pack:check": "node scripts/check-package.js",
+    "release:check": "node scripts/check-release.js",
+    "verify": "npm run check && npm run test:coverage && npm run licenses:check && npm run pack:check",
+    "prepublishOnly": "npm run verify && npm run release:check"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22.13"
   },
   "keywords": [
     "mcp",
@@ -46,8 +60,20 @@
     "last9"
   ],
   "license": "Apache-2.0",
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "registry": "https://registry.npmjs.org/"
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.29.0",
-    "@prometheus-io/lezer-promql": "0.313.0"
+    "@prometheus-io/lezer-promql": "0.313.0",
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "eslint": "10.7.0",
+    "globals": "17.7.0"
   }
 }

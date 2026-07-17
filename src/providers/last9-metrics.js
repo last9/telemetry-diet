@@ -475,6 +475,7 @@ export class Last9MetricsAdapter {
     this.client = await createMcpClient({
       label: 'Last9', envPrefix: 'TELEMETRY_DIET_LAST9',
       url: config.url, token: config.token, command: config.command, args: config.args,
+      sourceEnv: this.env,
       timeout: 180000,
       oauthClient: config.mode === 'hosted-oauth' ? this.oauth?.createClient('last9', config.url) : undefined,
     });
