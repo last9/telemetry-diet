@@ -1,5 +1,5 @@
 import { createMcpClient } from '../mcp/client.js';
-import { findTool, providerQuery, toolArgs } from './helpers.js';
+import { findTool, providerQuery, resultLimitForTool, toolArgs } from './helpers.js';
 import { environmentsFromLast9, normalizeLast9Logs, policiesFromLast9, servicesFromLast9Summary } from './last9-normalize.js';
 
 export function resolveLast9McpConfig(env = process.env) {
@@ -35,6 +35,7 @@ export class Last9Adapter {
       token: config.token,
       command: config.command,
       args: config.args,
+      sourceEnv: this.env,
       timeout: 180000,
       oauthClient: config.mode === 'hosted-oauth' ? this.oauth?.createClient('last9', config.url) : undefined,
     });
@@ -42,10 +43,13 @@ export class Last9Adapter {
     this.summaryTool = findTool(this.tools, ['get_service_summary']);
     this.environmentsTool = findTool(this.tools, ['get_service_environments']);
     this.logsTool = findTool(this.tools, ['get_service_logs']);
+    this.logsLimit = resultLimitForTool(this.logsTool, 200);
     this.attributesTool = findTool(this.tools, ['get_log_attributes']);
     this.rulesTool = findTool(this.tools, ['get_drop_rules']);
     this.didYouMeanTool = findTool(this.tools, ['did_you_mean']);
-    if (!this.summaryTool || !this.logsTool) throw new Error('Last9 MCP must expose get_service_summary and get_service_logs.');
+    if (!this.summaryTool || !this.logsTool || !this.logsLimit) {
+      throw new Error('Last9 MCP must expose safe read-only service summary and log tools, with an enforceable result limit on get_service_logs.');
+    }
     return {
       provider: this.provider, readOnly: true, serverInfo: this.client.serverInfo,
       tools: [this.summaryTool, this.environmentsTool, this.logsTool, this.attributesTool, this.rulesTool].filter(Boolean).map(({ name }) => name),
@@ -70,11 +74,13 @@ export class Last9Adapter {
   }
 
   async analyze({ service, environment, timeWindow }) {
+    const logsLimit = this.logsLimit || resultLimitForTool(this.logsTool, 200);
+    if (!logsLimit) throw new Error('Last9 MCP log tool does not advertise an enforceable safe result limit.');
     const scopedEnvironment = environment === '*' ? undefined : environment;
     const context = { provider: this.provider, service, environment: scopedEnvironment, timeWindow };
     const values = {
       service, environment: scopedEnvironment, query: providerQuery(service, scopedEnvironment),
-      start: timeWindow.start, end: timeWindow.end, from: timeWindow.start, to: timeWindow.end, limit: 200,
+      start: timeWindow.start, end: timeWindow.end, from: timeWindow.start, to: timeWindow.end, limit: logsLimit.value,
     };
     const [, , rules] = await Promise.all([
       this.client.callTool(this.summaryTool.name, toolArgs(this.summaryTool, values)),
@@ -83,7 +89,7 @@ export class Last9Adapter {
     ]);
     const existingPolicies = policiesFromLast9(rules);
     const logs = await this.client.callTool(this.logsTool.name, toolArgs(this.logsTool, values));
-    const normalized = normalizeLast9Logs(logs, context, { existingPolicies, limit: 200 });
+    const normalized = normalizeLast9Logs(logs, context, { existingPolicies, limit: logsLimit.value });
     if (!normalized) throw new Error('Last9 MCP response did not contain a recognized log collection or normalized aggregate.');
     return normalized;
   }

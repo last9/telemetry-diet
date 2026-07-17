@@ -36,3 +36,10 @@ test('Last9 empty log collections and existing policies remain valid context', (
   assert.equal(summary.recordsAnalyzed, 0);
   assert.equal(summary.existingPolicies[0].name, 'drop-health');
 });
+
+test('Last9 normalization rejects a raw-record response above the advertised limit', () => {
+  assert.throws(
+    () => normalizeLast9Logs({ count: 2, logs: [{ message: 'one' }, { message: 'two' }] }, context, { limit: 1 }),
+    /exceeded the advertised safe result limit/i,
+  );
+});

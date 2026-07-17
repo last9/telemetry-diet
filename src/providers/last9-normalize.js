@@ -36,6 +36,7 @@ export function policiesFromLast9(payload) {
 export function normalizeLast9Logs(payload, context, { existingPolicies = [], limit = 200 } = {}) {
   const data = unwrapPayload(payload);
   if (!data || typeof data !== 'object' || !Array.isArray(data.logs)) return null;
+  if (data.logs.length > limit) throw new Error('Last9 MCP log response exceeded the advertised safe result limit.');
   const limitations = [
     `Field ratios and fingerprints use at most ${limit} records returned by Last9 MCP.`,
   ];

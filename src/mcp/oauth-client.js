@@ -5,8 +5,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 
 function unwrapToolResult(result) {
   if (result?.isError) {
-    const message = result.content?.map(({ text }) => text).filter(Boolean).join('\n');
-    throw new Error(message || 'MCP tool call failed.');
+    throw new Error('MCP tool call failed.');
   }
   if (result?.structuredContent != null) return result.structuredContent;
   const text = result?.content?.find((entry) => entry.type === 'text')?.text;
@@ -17,9 +16,15 @@ function unwrapToolResult(result) {
 export class OAuthRequiredError extends Error {
   constructor(provider, authorizationUrl) {
     super(`Log in with ${provider} to continue.`);
+    let parsed;
+    try { parsed = new URL(authorizationUrl); } catch { throw new Error('MCP authorization endpoint must be a valid URL.'); }
+    const loopback = parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1' || parsed.hostname === '::1' || parsed.hostname === '[::1]';
+    if (parsed.protocol !== 'https:' && !(parsed.protocol === 'http:' && loopback)) {
+      throw new Error('MCP authorization endpoint must use HTTPS or loopback HTTP.');
+    }
     this.name = 'OAuthRequiredError';
     this.provider = provider;
-    this.authorizationUrl = authorizationUrl;
+    this.authorizationUrl = parsed.toString();
   }
 }
 
@@ -90,6 +95,7 @@ class OAuthMcpClient {
     this.transport = new StreamableHTTPClientTransport(new URL(this.session.url), {
       authProvider: this.session.oauthProvider,
     });
+    try { await this.session.pendingTransport?.close(); } catch { /* replace stale login transport */ }
     this.session.pendingTransport = this.transport;
     this.session.oauthProvider.authorizationUrl = undefined;
     try {
@@ -99,18 +105,35 @@ class OAuthMcpClient {
       return this;
     } catch (error) {
       if (error instanceof UnauthorizedError && this.session.oauthProvider.authorizationUrl) {
-        throw new OAuthRequiredError(this.session.provider, this.session.oauthProvider.authorizationUrl);
+        try {
+          throw new OAuthRequiredError(this.session.provider, this.session.oauthProvider.authorizationUrl);
+        } catch (authorizationError) {
+          if (authorizationError instanceof OAuthRequiredError) throw authorizationError;
+          this.session.pendingTransport = undefined;
+          try { await this.transport.close(); } catch { /* best-effort cleanup */ }
+          throw authorizationError;
+        }
       }
-      throw error;
+      this.session.pendingTransport = undefined;
+      try { await this.transport.close(); } catch { /* best-effort cleanup */ }
+      throw new Error('MCP OAuth connection failed.');
     }
   }
 
   async listTools() {
-    return (await this.client.listTools()).tools || [];
+    try {
+      return (await this.client.listTools()).tools || [];
+    } catch {
+      throw new Error('MCP tool catalog could not be read.');
+    }
   }
 
   async callTool(name, args = {}) {
-    return unwrapToolResult(await this.client.callTool({ name, arguments: args }));
+    try {
+      return unwrapToolResult(await this.client.callTool({ name, arguments: args }));
+    } catch {
+      throw new Error('MCP tool call failed.');
+    }
   }
 
   async close() {
@@ -130,10 +153,17 @@ export class OAuthSessionManager {
 
   createClient(provider, url) {
     if (!this.baseUrl) throw new Error('Local OAuth callback is not ready. Restart Telemetry Diet.');
+    let endpoint;
+    try { endpoint = new URL(url); } catch { throw new Error('MCP endpoint must be a valid URL.'); }
+    const loopback = endpoint.hostname === 'localhost' || endpoint.hostname === '127.0.0.1' || endpoint.hostname === '::1' || endpoint.hostname === '[::1]';
+    if (endpoint.protocol !== 'https:' && !(endpoint.protocol === 'http:' && loopback)) {
+      throw new Error('MCP endpoint must use HTTPS or loopback HTTP.');
+    }
+    const endpointUrl = endpoint.toString();
     const redirectUrl = `${this.baseUrl}/oauth/callback/${provider}`;
     let session = this.sessions.get(provider);
-    if (!session || session.url !== url || session.oauthProvider.redirectUrl !== redirectUrl) {
-      session = { provider, url, oauthProvider: new LocalOAuthProvider(provider, redirectUrl) };
+    if (!session || session.url !== endpointUrl || session.oauthProvider.redirectUrl !== redirectUrl) {
+      session = { provider, url: endpointUrl, oauthProvider: new LocalOAuthProvider(provider, redirectUrl) };
       this.sessions.set(provider, session);
     }
     return new OAuthMcpClient(session);
@@ -143,7 +173,11 @@ export class OAuthSessionManager {
     const session = this.sessions.get(provider);
     if (!session?.pendingTransport) throw new Error(`No ${provider} login is waiting for a callback.`);
     if (!session.oauthProvider.validateState(state)) throw new Error('OAuth state validation failed. Start login again.');
-    await session.pendingTransport.finishAuth(code);
+    try {
+      await session.pendingTransport.finishAuth(code);
+    } catch {
+      throw new Error(`${provider} login could not be completed. Start login again.`);
+    }
     session.pendingTransport = undefined;
     session.oauthProvider.completeFlow();
   }

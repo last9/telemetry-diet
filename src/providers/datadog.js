@@ -1,5 +1,5 @@
 import { createMcpClient } from '../mcp/client.js';
-import { extractServices, findTool, normalizedFromPayload, providerQuery, toolArgs } from './helpers.js';
+import { extractServices, findTool, normalizedFromPayload, providerQuery, resultLimitForTool, toolArgs } from './helpers.js';
 import { redact } from '../core/redact.js';
 
 const DATADOG_MCP_URL = 'https://mcp.datadoghq.com/v1/mcp';
@@ -22,6 +22,11 @@ export function resolveDatadogMcpConfig(env = process.env) {
 }
 
 export function datadogAggregateQueries(service, environment) {
+  const conditions = [
+    service && service !== '*' ? `service = ${sqlLiteral(service)}` : null,
+    environment && environment !== '*' ? `env = ${sqlLiteral(environment)}` : null,
+  ].filter(Boolean);
+  const where = conditions.length ? ` WHERE ${conditions.join(' AND ')}` : '';
   return {
     overview: [
       'SELECT COUNT(*) AS records_analyzed,',
@@ -30,11 +35,11 @@ export function datadogAggregateQueries(service, environment) {
       'COUNT("@user.id") AS user_id_presence, COUNT(DISTINCT "@user.id") AS user_id_unique_count,',
       'COUNT("@user.email") AS user_email_presence, COUNT(DISTINCT "@user.email") AS user_email_unique_count,',
       'COUNT("@http.request.header.authorization") AS authorization_presence, COUNT(DISTINCT "@http.request.header.authorization") AS authorization_unique_count',
-      'FROM logs',
+      `FROM logs${where}`,
     ].join(' '),
     fingerprints: [
       'SELECT status AS severity, "@http.url_details.path" AS path, "@http.method" AS method,',
-      '"@http.status_code" AS status_code, message, COUNT(*) AS record_count FROM logs',
+      `"@http.status_code" AS status_code, message, COUNT(*) AS record_count FROM logs${where}`,
       'GROUP BY status, "@http.url_details.path", "@http.method", "@http.status_code", message ORDER BY record_count DESC LIMIT 200',
     ].join(' '),
   };
@@ -170,23 +175,26 @@ export class DatadogAdapter {
       token: config.token,
       command: config.command,
       args: config.args,
+      sourceEnv: this.env,
       oauthClient: config.mode === 'hosted-oauth' ? this.oauth?.createClient('datadog', config.url) : undefined,
     });
     this.tools = await this.client.listTools();
     this.serviceTool = findTool(this.tools, ['search_datadog_services']);
     this.analysisTool = findTool(this.tools, ['analyze_datadog_logs']);
-    this.searchTool = findTool(this.tools, ['search_datadog_logs']);
+    const searchTool = findTool(this.tools, ['search_datadog_logs']);
+    this.searchLimit = resultLimitForTool(searchTool, 10);
+    this.searchTool = this.searchLimit ? searchTool : undefined;
     if (!this.serviceTool || (!this.analysisTool && !this.searchTool)) {
-      throw new Error('Datadog MCP must expose search_datadog_services and analyze_datadog_logs or search_datadog_logs.');
+      throw new Error('Datadog MCP must expose safe read-only service discovery plus aggregate log analysis or a detail search with an enforceable result limit.');
     }
     return { provider: this.provider, readOnly: true, serverInfo: this.client.serverInfo, tools: [this.serviceTool, this.analysisTool, this.searchTool].filter(Boolean).map(({ name }) => name) };
   }
 
   async discoverServices() {
     const intent = 'Discover services for a read-only telemetry policy analysis.';
-    const result = await this.client.callTool(this.serviceTool.name, toolArgs(this.serviceTool, { intent, max_tokens: 3000 }));
+    const result = await this.client.callTool(this.serviceTool.name, toolArgs(this.serviceTool, { intent, limit: 100, max_tokens: 3000 }));
     let services = extractServices(result);
-    if (!services.length) {
+    if (!services.length && this.analysisTool) {
       const logServices = await this.client.callTool(this.analysisTool.name, toolArgs(this.analysisTool, {
         sql_query: 'SELECT service, count(*) AS record_count FROM logs WHERE service IS NOT NULL GROUP BY service ORDER BY count(*) DESC LIMIT 100',
         query: 'SELECT service, count(*) AS record_count FROM logs WHERE service IS NOT NULL GROUP BY service ORDER BY count(*) DESC LIMIT 100',
@@ -226,16 +234,28 @@ export class DatadogAdapter {
         return aggregateSummaryResult;
       }
     }
-    if (!this.searchTool) throw new Error('Datadog aggregate did not include normalizable fields and search_datadog_logs is unavailable.');
+    const searchLimit = this.searchLimit || resultLimitForTool(this.searchTool, 10);
+    if (!this.searchTool || !searchLimit) {
+      if (aggregateSummaryResult) {
+        return {
+          ...aggregateSummaryResult,
+          limitations: [...new Set([
+            ...(aggregateSummaryResult.limitations || []),
+            'Detail examples were skipped because Datadog MCP did not advertise an enforceable result limit.',
+          ])],
+        };
+      }
+      throw new Error('Datadog aggregate did not include normalizable fields and no bounded read-only detail search is available.');
+    }
     const detailsRaw = await this.client.callTool(this.searchTool.name, toolArgs(this.searchTool, {
-      ...baseValues, query: providerQuery(service, environment), max_tokens: 3000,
+      ...baseValues, query: providerQuery(service, environment), limit: searchLimit.value, max_tokens: 3000,
       extra_fields: ['request.id', 'session.id', 'user.id', 'user.email', 'http.request.header.authorization', 'http.url_details.path', 'http.status_code', 'http.method'],
       intent: 'Fetch a tiny bounded set of examples for local redaction after aggregate analysis.',
     }));
     const details = structuredDatadogPayload(detailsRaw);
     const normalizedDetails = normalizedFromPayload(details, context, {
-      recordLimit: 10,
-      limitations: ['Examples use at most 10 log events permitted by the current Datadog RBAC scope; raw events are discarded after local redaction.'],
+      recordLimit: searchLimit.value,
+      limitations: ['Examples reflect the current Datadog RBAC scope. Telemetry Diet locally uses at most 10 returned log events; raw events are discarded after local redaction. The remote MCP response may be larger when its tool schema has no result-limit field.'],
     });
     const result = mergeExamples(aggregateSummaryResult, normalizedDetails);
     return result || {

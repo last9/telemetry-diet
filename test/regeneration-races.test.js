@@ -114,7 +114,7 @@ function setup(selectedIds) {
   return { context, registry, els, generateQueue, timers, sourceButtons, signalButtons, query };
 }
 
-const tick = () => new Promise((resolve) => setImmediate(resolve));
+const tick = () => new Promise((resolve) => { setImmediate(resolve); });
 const flushTimers = (h) => { const fns = [...h.timers.values()]; h.timers.clear(); fns.forEach((fn) => fn()); };
 const includeButtons = (h) => h.registry.filter((el) => el.tagName === 'BUTTON' && typeof el.className === 'string' && el.className.split(' ').includes('inc'));
 
@@ -214,6 +214,8 @@ test('all draft actions stay disabled through regeneration and baseline edits', 
 test('zero baseline values are honored instead of replaced by defaults', async () => {
   const h = await boot(['f1']);
 
+  h.query('#ingest-gb').value = '40';
+  h.query('#ingest-gb').dispatch('input');
   h.query('#cost-gb').value = '0';
   h.query('#cost-gb').dispatch('input');
   assert.equal(h.query('#savings-cost').textContent, '≈$0');
@@ -222,6 +224,16 @@ test('zero baseline values are honored instead of replaced by defaults', async (
   h.query('#ingest-gb').dispatch('input');
   assert.equal(h.query('#savings-data').textContent, '—');
   assert.equal(h.query('#savings-cost').textContent, '—');
+});
+
+test('savings scenario starts empty instead of inventing ingest and cost assumptions', async () => {
+  const h = await boot(['f1']);
+
+  assert.equal(h.query('#ingest-gb').value, '');
+  assert.equal(h.query('#cost-gb').value, '');
+  assert.equal(h.query('#savings-data').textContent, '—');
+  assert.equal(h.query('#savings-cost').textContent, '—');
+  assert.match(h.query('#preview-caveat').textContent, /enter an ingest baseline/i);
 });
 
 test('config breakdown distinguishes emitted changes from report-only recommendations', async () => {

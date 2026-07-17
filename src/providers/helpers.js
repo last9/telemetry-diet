@@ -1,9 +1,39 @@
-import { redact } from '../core/redact.js';
+import { redact, redactFieldValue } from '../core/redact.js';
+
+const WRITE_TOOL_PREFIX = /(?:^|[_-])(add|apply|approve|archive|assign|cancel|close|create|delete|deploy|destroy|disable|drop|edit|enable|execute|grant|import|install|kill|mutate|patch|pause|post|prune|publish|purge|put|remove|reset|restart|revoke|rotate|run|save|send|set|start|stop|submit|trigger|truncate|uninstall|update|upsert|write)(?:$|[_-])/i;
+const RESULT_LIMIT_KEY = /^(?:limit|count|size|max_?results?|page_?size)$/i;
+const START_TIME_KEY = /^(?:from|since|start|start_?time(?:_iso)?)$/i;
+const END_TIME_KEY = /^(?:end|end_?time(?:_iso)?|to|until)$/i;
+const TIME_WINDOW_KEY = /^(?:period|time_?range|time_?window)$/i;
+
+function safeKnownTool(tool, aliases) {
+  if (!tool?.name || WRITE_TOOL_PREFIX.test(tool.name) || tool.annotations?.destructiveHint === true || tool.annotations?.readOnlyHint === false) return false;
+  const name = tool.name.toLowerCase();
+  const exact = aliases.includes(name);
+  if (exact) return true;
+  const suffix = aliases.find((alias) => name.endsWith(alias));
+  if (!suffix || tool.annotations?.readOnlyHint !== true) return false;
+  const prefix = name.slice(0, -suffix.length).replace(/[_-]+$/, '');
+  return !WRITE_TOOL_PREFIX.test(prefix);
+}
 
 export function findTool(tools, names) {
   const lowered = names.map((name) => name.toLowerCase());
-  return tools.find((tool) => lowered.includes(tool.name.toLowerCase())) ||
-    tools.find((tool) => lowered.some((name) => tool.name.toLowerCase().endsWith(name)));
+  return tools.find((tool) => lowered.includes(tool.name.toLowerCase()) && safeKnownTool(tool, lowered)) ||
+    tools.find((tool) => safeKnownTool(tool, lowered));
+}
+
+export function resultLimitForTool(tool, requestedLimit) {
+  const properties = tool?.inputSchema?.properties || {};
+  const entry = Object.entries(properties).find(([key]) => RESULT_LIMIT_KEY.test(key));
+  if (!entry) return null;
+  const [key, schema] = entry;
+  const minimum = Number(schema?.minimum);
+  if (Number.isFinite(minimum) && minimum > requestedLimit) return null;
+  const maximum = Number(schema?.maximum);
+  const value = Number.isFinite(maximum) ? Math.min(requestedLimit, maximum) : requestedLimit;
+  if (!Number.isFinite(value) || value < 1) return null;
+  return { key, value: Math.floor(value) };
 }
 
 export function toolArgs(tool, values) {
@@ -14,19 +44,22 @@ export function toolArgs(tool, values) {
     if (values[key] != null) args[key] = values[key];
     else if (/^service(?:_name)?$/i.test(key) && values.service != null) args[key] = values.service;
     else if (/^(?:env|environment)$/i.test(key) && values.environment != null) args[key] = values.environment;
-    else if (/^(?:start|from|start_time_iso)$/i.test(key) && values.start != null) args[key] = values.start;
-    else if (/^(?:end|to|end_time_iso)$/i.test(key) && values.end != null) args[key] = values.end;
-    else if (/^(?:limit|count|size)$/i.test(key) && values.limit != null) args[key] = values.limit;
+    else if (START_TIME_KEY.test(key) && values.start != null) args[key] = values.start;
+    else if (END_TIME_KEY.test(key) && values.end != null) args[key] = values.end;
+    else if (RESULT_LIMIT_KEY.test(key) && values.limit != null) args[key] = values.limit;
+    else if (TIME_WINDOW_KEY.test(key) && (values.start != null || values.end != null)) {
+      args[key] = { start: values.start, end: values.end };
+    }
   }
   for (const key of required) {
     if (args[key] != null) continue;
     if (/query|filter|search/i.test(key)) args[key] = values.query || '*';
-    else if (/from|start|since/i.test(key)) args[key] = values.start;
-    else if (/to|end|until/i.test(key)) args[key] = values.end;
+    else if (START_TIME_KEY.test(key) || /from|start|since/i.test(key)) args[key] = values.start;
+    else if (END_TIME_KEY.test(key) || /to|end|until/i.test(key)) args[key] = values.end;
     else if (/service/i.test(key)) args[key] = values.service;
     else if (/env/i.test(key)) args[key] = values.environment;
-    else if (/limit|count|size/i.test(key)) args[key] = values.limit || 200;
-    else if (/time.?window|time.?range|period/i.test(key)) args[key] = { start: values.start, end: values.end };
+    else if (RESULT_LIMIT_KEY.test(key)) args[key] = values.limit || 200;
+    else if (TIME_WINDOW_KEY.test(key) || /time.?window|time.?range|period/i.test(key)) args[key] = { start: values.start, end: values.end };
     else if (key === 'telemetry') args[key] = { intent: values.intent || 'Perform a read-only telemetry policy analysis.' };
   }
   return args;
@@ -120,7 +153,8 @@ export function summarizeRecords(records, context, metadata = {}) {
   const messageGroups = new Map();
   const endpointGroups = new Map();
   for (const record of records.slice(0, 1000)) {
-    const direct = flatten(record);
+    const directRecord = Object.fromEntries(Object.entries(record).filter(([key]) => !['attributes', 'attribute', 'facets', 'resource'].includes(key)));
+    const direct = flatten(directRecord);
     for (const key of ['message', 'content', 'body', 'text', 'msg', 'timestamp', 'status', 'severity', 'level', 'host', 'service']) delete direct[key];
     const attributes = {
       ...direct,
@@ -152,7 +186,7 @@ export function summarizeRecords(records, context, metadata = {}) {
   const fields = [...fieldValues].map(([name, values]) => {
     const counts = new Map();
     values.forEach((value) => counts.set(value, (counts.get(value) || 0) + 1));
-    const topValues = [...counts].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([value, count]) => ({ value: redact(value), count }));
+    const topValues = [...counts].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([value, count]) => ({ value: redactFieldValue(name, value), count }));
     return {
       name,
       type: 'string',
@@ -182,19 +216,23 @@ export function normalizedFromPayload(payload, context, metadata = {}) {
   const summary = data?.summary || data?.telemetrySummary || data;
   if (summary && Array.isArray(summary.fields) && (Array.isArray(summary.messages) || Array.isArray(summary.endpoints))) {
     return {
-      ...summary,
       fields: summary.fields || [],
       messages: summary.messages || [],
       endpoints: summary.endpoints || [],
+      recordsAnalyzed: summary.recordsAnalyzed ?? summary.total,
       provider: context.provider,
       service: context.service || summary.service,
       environment: context.environment || summary.environment,
       timeWindow: context.timeWindow,
       existingPolicies: metadata.existingPolicies || summary.existingPolicies || [],
+      limitations: metadata.limitations || summary.limitations || [],
     };
   }
   const records = recordsFrom(data);
   if (records !== undefined) {
+    if (metadata.recordLimit && records.length > metadata.recordLimit) {
+      throw new Error('MCP raw-record response exceeded the advertised safe result limit.');
+    }
     const limited = metadata.recordLimit ? records.slice(0, metadata.recordLimit) : records;
     return summarizeRecords(limited, context, { ...metadata, total: data?.total ?? data?.count ?? metadata.total });
   }
@@ -202,5 +240,6 @@ export function normalizedFromPayload(payload, context, metadata = {}) {
 }
 
 export function providerQuery(service, environment) {
-  return [service && service !== '*' && `service:${service}`, environment && environment !== '*' && `env:${environment}`].filter(Boolean).join(' ') || '*';
+  const quote = (value) => `"${String(value).replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`;
+  return [service && service !== '*' && `service:${quote(service)}`, environment && environment !== '*' && `env:${quote(environment)}`].filter(Boolean).join(' ') || '*';
 }

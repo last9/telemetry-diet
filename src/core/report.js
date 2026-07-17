@@ -8,7 +8,7 @@ export function generateMarkdownReport(summary, findings, selectedFindings, otel
   const lines = [
     '# Telemetry Diet report',
     '',
-    '> AI explains. Analyzer proves. Human applies.',
+    '> Evidence first. Human reviewed. You apply.',
     '',
     '## Scope',
     '',
@@ -71,7 +71,7 @@ export function generateMarkdownReport(summary, findings, selectedFindings, otel
     '- This is a deterministic sample/window analysis, not an exact savings estimate.',
     '- Generated rules are visible drafts and are never auto-applied.',
     '- Review routing, retention, incident-response, and compliance requirements before changing production.',
-    '- Raw logs were not sent to an AI service by Telemetry Diet.',
+    '- Telemetry Diet does not call an AI service.',
   );
   return lines.join('\n');
 }

@@ -330,6 +330,7 @@ export class Last9TracesAdapter {
       token: config.token,
       command: config.command,
       args: config.args,
+      sourceEnv: this.env,
       timeout: 180000,
       oauthClient: config.mode === 'hosted-oauth' ? this.oauth?.createClient('last9', config.url) : undefined,
     });
