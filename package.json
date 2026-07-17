@@ -1,7 +1,7 @@
 {
   "name": "telemetry-diet",
   "version": "0.1.0",
-  "description": "Read-only telemetry analyzer for log policy, metric usage, and trace reduction drafts",
+  "description": "Local, read-only observability workbench for reviewable telemetry reduction drafts",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/last9/telemetry-diet.git"
@@ -17,6 +17,8 @@
   },
   "files": [
     "bin",
+    "schemas",
+    "scripts",
     "src",
     "web",
     "README.md",
@@ -28,6 +30,7 @@
     "dev": "node --watch bin/telemetry-diet.js --no-open",
     "sample:mcp": "node bin/sample-mcp.js",
     "test": "node --test",
+    "validate:artifacts": "node scripts/validate-artifacts.js",
     "check": "node --check bin/telemetry-diet.js && node --check bin/sample-mcp.js && node --check src/server.js && node --check web/app.js",
     "pack:check": "npm pack --dry-run"
   },
@@ -48,6 +51,8 @@
   "license": "Apache-2.0",
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.29.0",
-    "@prometheus-io/lezer-promql": "0.313.0"
+    "@prometheus-io/lezer-promql": "0.313.0",
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1"
   }
 }

@@ -1,0 +1,356 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:telemetry-diet:schema:last9-draft:v1",
+  "title": "Telemetry Diet Last9 policy draft v1",
+  "description": "A review-only Telemetry Diet policy draft. This schema does not represent an apply API.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "draft",
+    "apply",
+    "provider",
+    "scope",
+    "rules",
+    "warnings"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "telemetry-diet.last9-draft/v1"
+    },
+    "draft": {
+      "const": true
+    },
+    "apply": {
+      "const": false
+    },
+    "provider": {
+      "type": "string",
+      "minLength": 1
+    },
+    "scope": {
+      "$ref": "#/$defs/scope"
+    },
+    "rules": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "$ref": "#/$defs/dropRule"
+          },
+          {
+            "$ref": "#/$defs/redactRule"
+          }
+        ]
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "minItems": 3,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "$defs": {
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "service",
+        "environment",
+        "timeWindow"
+      ],
+      "properties": {
+        "service": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "environment": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "timeWindow": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "start",
+            "end"
+          ],
+          "properties": {
+            "start": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "end": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        }
+      }
+    },
+    "condition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "field",
+        "operator"
+      ],
+      "properties": {
+        "field": {
+          "type": "string",
+          "minLength": 1
+        },
+        "operator": {
+          "enum": [
+            "equals",
+            "exists",
+            "gte",
+            "in",
+            "lt"
+          ]
+        },
+        "value": {
+          "type": [
+            "boolean",
+            "number",
+            "string"
+          ]
+        },
+        "values": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": [
+              "boolean",
+              "number",
+              "string"
+            ]
+          }
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "operator": {
+              "const": "in"
+            },
+            "values": true
+          },
+          "required": [
+            "values"
+          ],
+          "not": {
+            "required": [
+              "value"
+            ]
+          }
+        },
+        {
+          "properties": {
+            "operator": {
+              "const": "exists"
+            }
+          },
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "value"
+                ]
+              },
+              {
+                "required": [
+                  "values"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "operator": {
+              "enum": [
+                "equals",
+                "gte",
+                "lt"
+              ]
+            },
+            "value": true
+          },
+          "required": [
+            "value"
+          ],
+          "not": {
+            "required": [
+              "values"
+            ]
+          }
+        }
+      ]
+    },
+    "sourceFinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "findingId",
+        "category",
+        "confidence"
+      ],
+      "properties": {
+        "findingId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "category": {
+          "type": "string",
+          "minLength": 1
+        },
+        "confidence": {
+          "enum": [
+            "high",
+            "medium",
+            "low"
+          ]
+        }
+      }
+    },
+    "commonRuleProperties": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "explanation": {
+          "type": "string",
+          "minLength": 1
+        },
+        "confidence": {
+          "enum": [
+            "high",
+            "medium",
+            "low"
+          ]
+        },
+        "sourceFinding": {
+          "$ref": "#/$defs/sourceFinding"
+        }
+      }
+    },
+    "dropRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "ruleType",
+        "filters",
+        "action",
+        "explanation",
+        "confidence",
+        "sourceFinding"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/commonRuleProperties/properties/name"
+        },
+        "ruleType": {
+          "const": "drop_log"
+        },
+        "filters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "all"
+          ],
+          "properties": {
+            "all": {
+              "type": "array",
+              "minItems": 2,
+              "items": {
+                "$ref": "#/$defs/condition"
+              }
+            }
+          }
+        },
+        "action": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "type": {
+              "const": "drop"
+            }
+          }
+        },
+        "explanation": {
+          "$ref": "#/$defs/commonRuleProperties/properties/explanation"
+        },
+        "confidence": {
+          "$ref": "#/$defs/commonRuleProperties/properties/confidence"
+        },
+        "sourceFinding": {
+          "$ref": "#/$defs/sourceFinding"
+        }
+      }
+    },
+    "redactRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "ruleType",
+        "filters",
+        "action",
+        "explanation",
+        "confidence",
+        "sourceFinding"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/commonRuleProperties/properties/name"
+        },
+        "ruleType": {
+          "const": "redact_attribute"
+        },
+        "filters": {
+          "$ref": "#/$defs/condition"
+        },
+        "action": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "field"
+          ],
+          "properties": {
+            "type": {
+              "const": "delete_attribute"
+            },
+            "field": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "explanation": {
+          "$ref": "#/$defs/commonRuleProperties/properties/explanation"
+        },
+        "confidence": {
+          "$ref": "#/$defs/commonRuleProperties/properties/confidence"
+        },
+        "sourceFinding": {
+          "$ref": "#/$defs/sourceFinding"
+        }
+      }
+    }
+  }
+}
