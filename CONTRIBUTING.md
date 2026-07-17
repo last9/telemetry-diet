@@ -26,7 +26,7 @@ npm start
 
 Use the bundled sample MCP for development whenever possible. Keep tests deterministic and use synthetic, already-redacted fixtures. Do not commit provider credentials, OAuth tokens, raw production telemetry, generated reports from a real environment, or local `.telemetry-diet.json` files.
 
-`npm run verify` is the required local gate. It checks formatting, lint, syntax, Markdown links, source coverage, and npm package contents.
+`npm run verify` is the required local gate. It checks formatting, lint, syntax, Markdown links, source coverage, installed dependency licenses, and npm package contents.
 
 ## Pull requests
 

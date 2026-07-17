@@ -10,6 +10,7 @@
   "bugs": {
     "url": "https://github.com/last9/telemetry-diet/issues"
   },
+  "author": "Last9 <hello@last9.io> (https://last9.io)",
   "type": "module",
   "bin": {
     "telemetry-diet": "bin/telemetry-diet.js",
@@ -22,6 +23,7 @@
     "src",
     "web",
     "README.md",
+    "CHANGELOG.md",
     "LICENSE",
     "NOTICE"
   ],
@@ -34,11 +36,14 @@
     "validate:artifacts": "node scripts/validate-artifacts.js",
     "format:check": "node scripts/check-text-format.js",
     "links:check": "node scripts/check-markdown-links.js",
+    "licenses:check": "node scripts/check-licenses.js",
     "lint": "eslint .",
     "syntax:check": "node scripts/check-syntax.js",
     "check": "npm run format:check && npm run links:check && npm run lint && npm run syntax:check",
     "pack:check": "node scripts/check-package.js",
-    "verify": "npm run check && npm run test:coverage && npm run pack:check"
+    "release:check": "node scripts/check-release.js",
+    "verify": "npm run check && npm run test:coverage && npm run licenses:check && npm run pack:check",
+    "prepublishOnly": "npm run verify && npm run release:check"
   },
   "engines": {
     "node": ">=22.13"
@@ -55,6 +60,11 @@
     "last9"
   ],
   "license": "Apache-2.0",
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "registry": "https://registry.npmjs.org/"
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.29.0",
     "@prometheus-io/lezer-promql": "0.313.0",
