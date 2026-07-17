@@ -33,9 +33,10 @@
     "test:coverage": "node --test --experimental-test-coverage --test-coverage-include=\"src/**/*.js\" --test-coverage-lines=90 --test-coverage-branches=75 --test-coverage-functions=85",
     "validate:artifacts": "node scripts/validate-artifacts.js",
     "format:check": "node scripts/check-text-format.js",
+    "links:check": "node scripts/check-markdown-links.js",
     "lint": "eslint .",
     "syntax:check": "node scripts/check-syntax.js",
-    "check": "npm run format:check && npm run lint && npm run syntax:check",
+    "check": "npm run format:check && npm run links:check && npm run lint && npm run syntax:check",
     "pack:check": "node scripts/check-package.js",
     "verify": "npm run check && npm run test:coverage && npm run pack:check"
   },

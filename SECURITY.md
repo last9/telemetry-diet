@@ -1,10 +1,14 @@
 # Security Policy
 
+## Supported versions
+
+Security fixes are made on the latest published version. Before the first public release, fixes land on `main`. Pre-1.0 releases may not receive backports; upgrade to the latest release before reporting an issue that is already fixed.
+
 ## Reporting a vulnerability
 
-Please report vulnerabilities through GitHub's private vulnerability reporting for this repository. Do not open a public issue containing credentials, tokens, raw telemetry, or exploit details.
+Use [GitHub private vulnerability reporting](https://github.com/last9/telemetry-diet/security/advisories/new) whenever the **Report a vulnerability** button is available. If it is unavailable, email [hello@last9.io](mailto:hello@last9.io) with the subject `Telemetry Diet security report`. Do not open a public issue containing credentials, tokens, raw telemetry, or exploit details.
 
-Include the affected version, reproduction steps using synthetic data, impact, and any suggested mitigation. Maintainers will acknowledge the report and coordinate disclosure after a fix is available.
+Include the affected version, reproduction steps using synthetic data, impact, and any suggested mitigation. Remove provider credentials and production telemetry from all evidence. Maintainers will acknowledge reports as soon as practical, investigate privately, and coordinate disclosure after a fix is available.
 
 ## Trust boundary
 

@@ -53,7 +53,7 @@ npm run verify
 
 The gate checks tracked text/JSON hygiene, lints and syntax-checks every JavaScript file, runs the test suite with source-only coverage thresholds, and validates the npm package manifest. `npm test` remains the faster test-only command.
 
-Provider environment variables can be set in the same shell before `npm start`; see [Datadog MCP](#connect-datadog-mcp), [Last9 MCP](#connect-last9-mcp), and the detailed [provider setup guide](docs/mcp-providers.md).
+Provider environment variables can be set in the same shell before `npm start`; see [Datadog MCP](#connect-datadog-mcp-for-logs), [Last9 MCP](#connect-last9-mcp), and the detailed [provider setup guide](docs/mcp-providers.md).
 
 ## Fast demo: no credentials
 
@@ -229,6 +229,13 @@ src/sample/          bundled sample scenario
 web/                 dependency-free local workbench
 test/                deterministic and MCP integration tests
 ```
+
+## Community
+
+- Read [SUPPORT.md](SUPPORT.md) before opening a question or bug report.
+- See [CONTRIBUTING.md](CONTRIBUTING.md) to develop and test a change.
+- Report vulnerabilities using the private process in [SECURITY.md](SECURITY.md), never a public issue.
+- Participation is governed by the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## License
 
