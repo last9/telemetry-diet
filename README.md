@@ -1,5 +1,10 @@
 # Telemetry Diet
 
+[![CI](https://github.com/last9/telemetry-diet/actions/workflows/ci.yml/badge.svg)](https://github.com/last9/telemetry-diet/actions/workflows/ci.yml)
+[![npm version](https://img.shields.io/npm/v/telemetry-diet.svg)](https://www.npmjs.com/package/telemetry-diet)
+[![Node.js](https://img.shields.io/badge/Node.js-%3E%3D22.13-339933?logo=node.js&logoColor=white)](package.json)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
+
 > Find telemetry you can safely trim—locally, read-only, with drafts you review and apply.
 
 Telemetry Diet is a local observability optimization workbench for platform and observability engineers. It uses read-only MCP tools to gather provider evidence, analyzes that evidence deterministically, and exports reviewable drafts without applying production changes.
@@ -8,7 +13,7 @@ Logs are the primary supported workflow. Last9 metric-reference and trace-reduct
 
 | Workflow | Bundled sample | Datadog | Last9 |
 | --- | --- | --- | --- |
-| Log noise, privacy, and cardinality analysis | Included | Supported | Supported |
+| Log noise, privacy, and cardinality analysis | Included | Beta | Supported |
 | Metric reference coverage | Beta preview | Not supported | Beta preview |
 | Trace reduction candidates | Beta preview | Not supported | Beta preview |
 
@@ -51,7 +56,7 @@ Stop the local server with `Ctrl+C`. Before submitting changes, run the complete
 npm run verify
 ```
 
-The gate checks tracked text/JSON hygiene, lints and syntax-checks every JavaScript file, runs the test suite with source-only coverage thresholds, and validates the npm package manifest. `npm test` remains the faster test-only command.
+The gate checks tracked text/JSON hygiene, Markdown links, JavaScript lint and syntax, source-only coverage thresholds, installed dependency licenses, and npm package contents. `npm test` remains the faster test-only command.
 
 Provider environment variables can be set in the same shell before `npm start`; see [Datadog MCP](#connect-datadog-mcp-for-logs), [Last9 MCP](#connect-last9-mcp), and the detailed [provider setup guide](docs/mcp-providers.md).
 
@@ -75,6 +80,8 @@ Telemetry Diet uses the configured Datadog MCP server's actual read-only tools:
 - `search_datadog_services` for discovery
 - `analyze_datadog_logs` for aggregate analysis
 - `search_datadog_logs` for a detail fallback when aggregates are insufficient
+
+This beta path is contract-tested against the advertised MCP tool schemas and safety boundaries. It remains beta until the complete OAuth and analysis flow is smoke-tested with a dedicated least-privilege Datadog role.
 
 Click **Log in with Datadog**. Telemetry Diet connects to Datadog's hosted MCP endpoint, opens Datadog OAuth in a provider window, validates the localhost callback, and reconnects automatically. There is no Datadog CLI or API-key setup in the default flow.
 

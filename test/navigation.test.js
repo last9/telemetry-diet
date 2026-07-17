@@ -48,7 +48,8 @@ test('public product contract stays outcome-led and explicit about beta scope', 
   assert.doesNotMatch(html, /Projected savings|AI explains/i);
 
   assert.match(readme, /Logs are the primary supported workflow/);
-  assert.match(readme, /\| Log noise, privacy, and cardinality analysis \| Included \| Supported \| Supported \|/);
+  assert.match(readme, /\| Log noise, privacy, and cardinality analysis \| Included \| Beta \| Supported \|/);
+  assert.match(readme, /This beta path is contract-tested/);
   assert.match(readme, /\| Metric reference coverage \| Beta preview \| Not supported \| Beta preview \|/);
   assert.match(readme, /\| Trace reduction candidates \| Beta preview \| Not supported \| Beta preview \|/);
   assert.doesNotMatch(readme, /underused metrics|Reddit-ready|tested OTel|AI explains/i);
