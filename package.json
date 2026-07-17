@@ -30,12 +30,17 @@
     "dev": "node --watch bin/telemetry-diet.js --no-open",
     "sample:mcp": "node bin/sample-mcp.js",
     "test": "node --test",
+    "test:coverage": "node --test --experimental-test-coverage --test-coverage-include=\"src/**/*.js\" --test-coverage-lines=90 --test-coverage-branches=75 --test-coverage-functions=85",
     "validate:artifacts": "node scripts/validate-artifacts.js",
-    "check": "node --check bin/telemetry-diet.js && node --check bin/sample-mcp.js && node --check src/server.js && node --check web/app.js",
-    "pack:check": "npm pack --dry-run"
+    "format:check": "node scripts/check-text-format.js",
+    "lint": "eslint .",
+    "syntax:check": "node scripts/check-syntax.js",
+    "check": "npm run format:check && npm run lint && npm run syntax:check",
+    "pack:check": "node scripts/check-package.js",
+    "verify": "npm run check && npm run test:coverage && npm run pack:check"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22.13"
   },
   "keywords": [
     "mcp",
@@ -54,5 +59,10 @@
     "@prometheus-io/lezer-promql": "0.313.0",
     "ajv": "8.20.0",
     "ajv-formats": "3.0.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "eslint": "10.7.0",
+    "globals": "17.7.0"
   }
 }

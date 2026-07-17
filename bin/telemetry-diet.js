@@ -9,7 +9,7 @@ try {
   if (localConfig.last9OrgSlug && !process.env.TELEMETRY_DIET_LAST9_ORG_SLUG) {
     process.env.TELEMETRY_DIET_LAST9_ORG_SLUG = localConfig.last9OrgSlug;
   }
-} catch {}
+} catch { /* Local configuration is optional. */ }
 
 function parseArgs(argv) {
   const result = { host: '127.0.0.1', port: Number(process.env.PORT || 4545), open: true };
