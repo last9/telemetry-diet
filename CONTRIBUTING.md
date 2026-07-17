@@ -6,13 +6,12 @@ Telemetry Diet is a local-first, read-only telemetry policy testbench. Contribut
 
 Requirements:
 
-- Node.js 20 or newer
+- Node.js 22.13 or newer
 - npm
 
 ```bash
 npm install
-npm test
-npm run check
+npm run verify
 npm start
 ```
 
@@ -26,4 +25,4 @@ Use the bundled sample MCP for development whenever possible. Do not commit prov
 - Add focused tests for analyzer, normalization, and policy behavior.
 - Describe limitations when a generated rule is provider-specific or best effort.
 
-Production write paths, autonomous policy application, and raw-log AI calls are outside the launch scope.
+Production write paths, autonomous policy application, and calls to AI services with raw telemetry are outside the project scope.
