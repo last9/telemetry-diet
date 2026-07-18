@@ -60,6 +60,8 @@ The gate checks tracked text/JSON hygiene, Markdown links, JavaScript lint and s
 
 Provider environment variables can be set in the same shell before `npm start`; see [Datadog MCP](#connect-datadog-mcp-for-logs), [Last9 MCP](#connect-last9-mcp), and the detailed [provider setup guide](docs/mcp-providers.md).
 
+Want to integrate another observability platform? Follow [Add an observability provider](docs/adding-provider.md) for the adapter contract, safety requirements, end-to-end wiring, and test checklist.
+
 ## Fast demo: no credentials
 
 With the local app running:

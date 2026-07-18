@@ -5,6 +5,10 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { selectPackDetails } from './pack-output.js';
+
+const PACKAGE_NAME = 'telemetry-diet';
+
 const REQUIRED_FILES = [
   'LICENSE',
   'NOTICE',
@@ -17,6 +21,7 @@ const REQUIRED_FILES = [
   'scripts/check-markdown-links.js',
   'scripts/check-licenses.js',
   'scripts/check-package.js',
+  'scripts/pack-output.js',
   'scripts/check-release.js',
   'scripts/check-syntax.js',
   'scripts/check-text-format.js',
@@ -31,13 +36,16 @@ const MAX_PACKED_BYTES = 250_000;
 const validationDir = mkdtempSync(join(tmpdir(), 'telemetry-diet-pack-'));
 try {
   const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-  const result = spawnSync(npm, [
+  const npmArgs = [
     'pack', '--dry-run', '--json', '--cache', join(validationDir, 'npm-cache'),
-  ], { encoding: 'utf8' });
+  ];
+  const result = process.env.npm_execpath
+    ? spawnSync(process.execPath, [process.env.npm_execpath, ...npmArgs], { encoding: 'utf8' })
+    : spawnSync(npm, npmArgs, { encoding: 'utf8' });
   if (result.error) throw result.error;
   if (result.status !== 0) throw new Error(result.stderr || 'npm pack --dry-run failed.');
 
-  const [details] = JSON.parse(result.stdout);
+  const details = selectPackDetails(JSON.parse(result.stdout), PACKAGE_NAME);
   const files = new Map(details.files.map((file) => [file.path, file]));
   const missing = REQUIRED_FILES.filter((path) => !files.has(path));
   const forbidden = [...files.keys()].filter((path) => FORBIDDEN_PATH.test(path));
