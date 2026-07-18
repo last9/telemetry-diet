@@ -37,10 +37,6 @@ jobs:
         run: npm sbom --omit=dev --sbom-format cyclonedx > "telemetry-diet-${GITHUB_REF_NAME}.cdx.json"
       - name: Publish exact tarball to npm
         run: npm publish telemetry-diet-*.tgz --access public --provenance
-        env:
-          # Required only for the first publish. Remove NPM_TOKEN after configuring
-          # this workflow as the package's npm trusted publisher.
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       - name: Create GitHub release with package and SBOM
         run: gh release create "${GITHUB_REF_NAME}" telemetry-diet-*.tgz telemetry-diet-*.cdx.json --verify-tag --generate-notes --title "Telemetry Diet ${GITHUB_REF_NAME}"
         env:
