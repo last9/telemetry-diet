@@ -83,6 +83,18 @@ test('cross-site fetches are blocked but the OAuth callback navigation is allowe
   assert.equal(crossSiteFetch.status, 403);
   assert.match((await crossSiteFetch.json()).error, /cross-site/i);
 
+  // A framed load reports Sec-Fetch-Mode: navigate but Sec-Fetch-Dest: iframe.
+  // It must stay blocked so cross-site pages cannot frame JSON API responses.
+  const framedNavigation = await fetch(`${baseUrl}/api/config`, {
+    headers: {
+      'sec-fetch-site': 'cross-site',
+      'sec-fetch-mode': 'navigate',
+      'sec-fetch-dest': 'iframe',
+    },
+  });
+  assert.equal(framedNavigation.status, 403);
+  assert.match((await framedNavigation.json()).error, /cross-site/i);
+
   // The Datadog/Last9 OAuth redirect is a cross-site top-level GET navigation and
   // must reach routeOAuth (here it fails later, on the unknown auth code, not on the guard).
   // Use a raw request because fetch() rewrites Sec-Fetch-Mode to "cors".

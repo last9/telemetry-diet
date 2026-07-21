@@ -144,13 +144,15 @@ export function createTelemetryDietServer({ env = process.env } = {}) {
     // Fetch Metadata resource isolation: block cross-site sub-resource loads
     // (the CSRF/data-exfiltration vector) but permit cross-site top-level GET
     // navigations. The OAuth callback redirect from Datadog/Last9 arrives this
-    // way (Sec-Fetch-Site: cross-site, Sec-Fetch-Mode: navigate); it is
-    // read-only and its response cannot be read cross-origin.
+    // way (Sec-Fetch-Site: cross-site, Sec-Fetch-Mode: navigate,
+    // Sec-Fetch-Dest: document); it is read-only and its response cannot be
+    // read cross-origin. Requiring dest === 'document' keeps framed loads
+    // (iframe/frame/object/embed, which report their own destinations) blocked,
+    // so cross-site pages cannot frame JSON API responses.
     if (request.headers['sec-fetch-site'] === 'cross-site') {
-      const dest = request.headers['sec-fetch-dest'];
       const topLevelNavigation = request.method === 'GET'
         && request.headers['sec-fetch-mode'] === 'navigate'
-        && dest !== 'object' && dest !== 'embed';
+        && request.headers['sec-fetch-dest'] === 'document';
       if (!topLevelNavigation) {
         const error = new Error('Cross-site requests are not allowed.');
         error.statusCode = 403;
