@@ -73,6 +73,43 @@ test('API requires JSON and bounds analysis scope', async (t) => {
   assert.match((await oversizedWindow.json()).error, /cannot exceed 7 days/i);
 });
 
+test('cross-site fetches are blocked but the OAuth callback navigation is allowed through', async (t) => {
+  const baseUrl = await startServer(t);
+
+  // A cross-site sub-resource fetch (e.g. a malicious page hitting the API) stays blocked.
+  const crossSiteFetch = await fetch(`${baseUrl}/api/config`, {
+    headers: { 'sec-fetch-site': 'cross-site', 'sec-fetch-mode': 'cors' },
+  });
+  assert.equal(crossSiteFetch.status, 403);
+  assert.match((await crossSiteFetch.json()).error, /cross-site/i);
+
+  // The Datadog/Last9 OAuth redirect is a cross-site top-level GET navigation and
+  // must reach routeOAuth (here it fails later, on the unknown auth code, not on the guard).
+  // Use a raw request because fetch() rewrites Sec-Fetch-Mode to "cors".
+  const target = new URL(baseUrl);
+  const callback = await new Promise((resolve, reject) => {
+    const req = httpRequest({
+      hostname: target.hostname,
+      port: target.port,
+      path: '/oauth/callback/datadog?code=abc123&state=xyz',
+      headers: {
+        host: target.host,
+        'sec-fetch-site': 'cross-site',
+        'sec-fetch-mode': 'navigate',
+        'sec-fetch-dest': 'document',
+      },
+    }, (response) => {
+      let body = '';
+      response.on('data', (chunk) => { body += chunk; });
+      response.on('end', () => resolve({ status: response.statusCode, body }));
+    });
+    req.on('error', reject);
+    req.end();
+  });
+  assert.notEqual(callback.status, 403);
+  assert.doesNotMatch(callback.body, /cross-site/i);
+});
+
 test('OAuth denial errors do not echo provider-controlled query text', async (t) => {
   const baseUrl = await startServer(t);
   const response = await fetch(`${baseUrl}/oauth/callback/datadog?error=password%3Dhunter2`);
