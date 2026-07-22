@@ -205,7 +205,7 @@ The check also validates Last9 JSON against the published [`telemetry-diet.last9
 > Evidence first. Human reviewed. You apply.
 
 - Provider OAuth plus read-only MCP calls only; no production write implementation ships.
-- The web server binds only to a loopback address and rejects mismatched Host, cross-origin, and cross-site requests.
+- The web server binds only to a loopback address and rejects mismatched Host and cross-origin requests. Cross-site sub-resource and non-navigation requests are rejected; only cross-site top-level document navigations (e.g. the provider OAuth callback redirect) are allowed through, and their responses cannot be read cross-origin.
 - Raw records are summarized locally and are not sent to an AI service.
 - Metric query definitions and trace aggregates are normalized locally; raw trace records are never returned to the browser.
 - Provider evidence is processed locally and passed through pattern-based redaction before UI/report generation. Treat exported reports as sensitive until reviewed.
