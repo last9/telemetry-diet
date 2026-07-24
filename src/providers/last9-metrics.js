@@ -36,7 +36,13 @@ const CAPABILITIES = {
     label: 'entity indicator queries',
     aliases: ['get_entity_indicators', 'list_entity_indicators', 'get_indicators', 'list_indicators', 'get_entity_kpis', 'list_entity_kpis'],
   },
+  query: {
+    label: 'PromQL instant-query',
+    aliases: ['prometheus_instant_query', 'instant_query', 'query_instant', 'prometheus_query'],
+  },
 };
+
+const MAX_QUERY_RESULT_SERIES = 200;
 
 function normalizedWords(value) {
   return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
@@ -111,6 +117,11 @@ function toolScore(tool, capability) {
     if (!has(/\b(indicators?|kpis?)\b/) || !has(/\b(entities?|queries|definitions?)\b/)) return -1;
     return 120;
   }
+  if (capability === 'query') {
+    if (!has(/\b(query|promql)\b/)) return -1;
+    if (has(/\b(dashboard|alert|indicator|kpi|label|catalog)\b/)) return -1;
+    return 100 + (has(/\binstant\b/) ? 20 : 0);
+  }
   return -1;
 }
 
@@ -167,6 +178,25 @@ function metricNamesFrom(payload) {
   };
   visit(payload, Array.isArray(payload));
   return [...names].sort();
+}
+
+// Parses a Prometheus instant-query response (`{status, data: {result: [{metric, value}]}}`)
+// into `{job, value}` pairs for a `sum by (job) (...)` query. Returns null on any shape
+// that doesn't match a successful vector result, so the caller can fail open.
+function jobSeriesFromInstantQuery(payload) {
+  if (!payload || payload.status !== 'success' || !Array.isArray(payload.data?.result)) return null;
+  const result = payload.data.result;
+  if (result.length > MAX_QUERY_RESULT_SERIES) failBounds();
+  const rows = [];
+  for (const series of result) {
+    const job = series?.metric?.job;
+    const rawValue = Array.isArray(series?.value) ? series.value[1] : undefined;
+    if (typeof job !== 'string' || rawValue == null) continue;
+    const value = Number(rawValue);
+    if (!Number.isFinite(value)) continue;
+    appendBounded(rows, { job: boundedString(job), value }, MAX_QUERY_RESULT_SERIES);
+  }
+  return rows;
 }
 
 function firstValue(value, keys) {
@@ -501,6 +531,20 @@ export class Last9MetricsAdapter {
     return this.client.callTool(tool.name, toolArguments(tool, capability, values));
   }
 
+  // Runs one PromQL instant query through the resolved `query` capability, returning
+  // `{job, value}` pairs for a `sum by (job) (...)` expression, or null when the
+  // capability is unavailable or the response isn't a recognized vector result.
+  async runInstantQuery(promql) {
+    const tool = this.capabilities.query;
+    if (!tool) return null;
+    const properties = tool.inputSchema?.properties || {};
+    const required = new Set(tool.inputSchema?.required || []);
+    const queryKey = [...new Set([...Object.keys(properties), ...required])]
+      .find((key) => /^(?:query|expr|promql)$/i.test(key)) || 'query';
+    const raw = await this.client.callTool(tool.name, { [queryKey]: promql });
+    return jobSeriesFromInstantQuery(raw);
+  }
+
   async collect() {
     if (!this.client || !this.capabilities) throw new Error('Connect the Last9 metrics adapter before collecting.');
     const warnings = [];
@@ -604,12 +648,45 @@ export class Last9MetricsAdapter {
       normalized.forEach((reference) => appendBounded(references, reference));
     }
 
+    const scrapeVolume = await this.collectScrapeVolume(warnings);
+
     return {
       capturedAt: this.now().toISOString(),
       metricNames,
       references,
+      scrapeVolume,
       warnings,
     };
+  }
+
+  // Best-effort, optional: scrape-target count and per-cycle sample volume by job,
+  // via the standard Prometheus `up` / `scrape_samples_scraped` meta-metrics. Powers
+  // the scrape-frequency/duplicate-collection review in the metric-usage report.
+  // Never throws — absence or failure only adds a warning, since reference-status
+  // analysis is complete without it.
+  async collectScrapeVolume(warnings) {
+    if (!this.capabilities.query) {
+      warnings.push('Last9 MCP does not advertise a PromQL query capability; scrape-frequency/duplicate-collection volume was not analyzed.');
+      return null;
+    }
+    try {
+      const [targets, samples] = await Promise.all([
+        this.runInstantQuery('topk(20, sum by (job) (up))'),
+        this.runInstantQuery('topk(20, sum by (job) (scrape_samples_scraped))'),
+      ]);
+      if (!targets || !samples) {
+        warnings.push('Last9 PromQL query tool returned an unrecognized response shape; scrape-frequency/duplicate-collection volume was not analyzed.');
+        return null;
+      }
+      return {
+        targetsByJob: targets.map(({ job, value }) => ({ job, targetCount: Math.round(value) })),
+        samplesByJob: samples.map(({ job, value }) => ({ job, samples: value })),
+      };
+    } catch (error) {
+      if (error?.message === BOUNDS_ERROR) throw error;
+      warnings.push('Could not run the scrape-frequency/duplicate-collection PromQL queries; the read request failed.');
+      return null;
+    }
   }
 
   close() { return this.client?.close(); }

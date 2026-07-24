@@ -60,5 +60,24 @@ export function renderMetricUsageMarkdown(report, { metrics = report.metrics } =
     }
   }
 
+  if (report.scrapeVolume?.available) {
+    lines.push(
+      '## Scrape frequency & duplicate collection',
+      '',
+      'Scrape interval is a direct multiplier on ingestion volume. The jobs below '
+        + 'account for the largest share of samples scraped per cycle across the org — '
+        + 'review their ServiceMonitor/PodMonitor `scrape_interval` and check for the '
+        + 'same target scraped by more than one job.',
+      '',
+      '| Job | Samples per scrape | Targets |',
+      '| --- | ---: | ---: |',
+      ...report.scrapeVolume.topJobs.map(({ job, samplesPerScrape, targetCount }) =>
+        `| \`${markdownCell(job)}\` | ${Math.round(samplesPerScrape)} | ${targetCount ?? '—'} |`),
+      '',
+      ...report.scrapeVolume.limitations.map((limitation) => `> ${limitation}`),
+      '',
+    );
+  }
+
   return lines.join('\n').trimEnd();
 }

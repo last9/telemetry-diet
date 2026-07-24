@@ -80,3 +80,32 @@ test('strict mode disables protection without changing observed status', () => {
   assert.equal(strictReport.metrics[0].status, 'unreferenced');
   assert.equal(strictReport.metrics[0].protected, false);
 });
+
+test('folds scrape-volume analysis into the report and its limitations', () => {
+  const snapshot = {
+    metricNames: ['api_requests_total'],
+    references: [],
+    warnings: [],
+    scrapeVolume: {
+      targetsByJob: [{ job: 'api-svc', targetCount: 17 }],
+      samplesByJob: [{ job: 'api-svc', samples: 151284 }],
+    },
+  };
+
+  const report = analyzeMetricUsage(snapshot);
+
+  assert.equal(report.scrapeVolume.available, true);
+  assert.deepEqual(report.scrapeVolume.topJobs, [{ job: 'api-svc', samplesPerScrape: 151284, targetCount: 17 }]);
+  assert.match(report.limitations.join('\n'), /scrape interval/i);
+});
+
+test('omits scrape-volume findings without affecting reference-status analysis when unavailable', () => {
+  const report = analyzeMetricUsage({
+    metricNames: ['api_requests_total'],
+    references: [],
+    warnings: [],
+  });
+
+  assert.deepEqual(report.scrapeVolume, { available: false, topJobs: [], limitations: [] });
+  assert.equal(report.summary.metricCount, 1);
+});

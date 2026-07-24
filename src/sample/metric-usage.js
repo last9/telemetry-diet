@@ -40,5 +40,17 @@ export function getSampleMetricUsageSnapshot() {
     warnings: [
       'Unreferenced means unreferenced in scanned dashboards, alerts, and indicators; ad hoc queries and external consumers are not observed.',
     ],
+    scrapeVolume: {
+      targetsByJob: [
+        { job: 'checkout-api', targetCount: 30 },
+        { job: 'worker-svc', targetCount: 12 },
+        { job: 'istio-proxy', targetCount: 42 },
+      ],
+      samplesByJob: [
+        { job: 'checkout-api', samples: 151284 },
+        { job: 'istio-proxy', samples: 105510 },
+        { job: 'worker-svc', samples: 41230 },
+      ],
+    },
   };
 }

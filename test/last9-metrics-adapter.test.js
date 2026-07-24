@@ -52,7 +52,10 @@ test('collects metric inventory and preserves exact query provenance from advert
   assert.equal(connection.readOnly, true);
   assert.deepEqual(snapshot.metricNames, ['http_requests_total', 'queue_depth']);
   assert.equal(snapshot.capturedAt, '2026-07-15T00:00:00.000Z');
-  assert.deepEqual(snapshot.warnings, []);
+  assert.deepEqual(snapshot.warnings, [
+    'Last9 MCP does not advertise a PromQL query capability; scrape-frequency/duplicate-collection volume was not analyzed.',
+  ]);
+  assert.equal(snapshot.scrapeVolume, null);
   assert.deepEqual(snapshot.references, [
     { kind: 'dashboard', sourceId: 'native-1', sourceName: 'Operations > HTTP > Request rate > A', query: 'sum(rate(http_requests_total[5m]))', updatedAt: '2026-07-14T10:00:00Z' },
     { kind: 'dashboard', sourceId: 'native-1', sourceName: 'Operations > HTTP > Request rate > B', query: 'max(queue_depth)', updatedAt: '2026-07-14T10:00:00Z' },
@@ -90,10 +93,12 @@ test('warns for unavailable optional reference sources without exposing tool err
   const snapshot = await adapter.collect();
 
   assert.equal(snapshot.references.length, 0);
-  assert.equal(snapshot.warnings.length, 3);
+  assert.equal(snapshot.warnings.length, 4);
   assert.match(snapshot.warnings.join('\n'), /Grafana dashboard definitions/i);
   assert.match(snapshot.warnings.join('\n'), /alert definitions/i);
   assert.match(snapshot.warnings.join('\n'), /entity indicator queries/i);
+  assert.match(snapshot.warnings.join('\n'), /PromQL query capability/i);
+  assert.equal(snapshot.scrapeVolume, null);
   assert.doesNotMatch(snapshot.warnings.join('\n'), /SENSITIVE_VALUE_DO_NOT_ECHO/);
 });
 
@@ -309,6 +314,136 @@ test('fails closed with sanitized errors for unusable inventory and failed refer
     (error) => /No Last9 metric-reference capability completed successfully/i.test(error.message)
       && !/SENSITIVE_REFERENCE_FAILURE/.test(error.message),
   );
+});
+
+test('collects scrape-frequency/duplicate-collection volume via the resolved PromQL query capability', async () => {
+  const tools = [
+    { name: 'get_metric_names', inputSchema: { properties: {} } },
+    { name: 'list_alert_rules', inputSchema: { properties: {} } },
+    { name: 'prometheus_instant_query', annotations: { readOnlyHint: true }, inputSchema: { required: ['query'], properties: { query: {}, time_iso: {}, lookback_minutes: {}, datasource: {} } } },
+  ];
+  const { calls, oauth } = fakeOAuthClient(tools, {
+    get_metric_names: ['http_requests_total'],
+    list_alert_rules: { rules: [{ id: 'alert-1', expr: 'http_requests_total' }] },
+    prometheus_instant_query: (args) => {
+      if (args.query.includes('scrape_samples_scraped')) {
+        return {
+          status: 'success',
+          data: {
+            resultType: 'vector',
+            result: [
+              { metric: { job: 'dynamo-svc' }, value: [1700000000, '213882'] },
+              { metric: { job: 'api-svc' }, value: [1700000000, '151284'] },
+            ],
+          },
+        };
+      }
+      return {
+        status: 'success',
+        data: {
+          resultType: 'vector',
+          result: [{ metric: { job: 'dynamo-svc' }, value: [1700000000, '60'] }],
+        },
+      };
+    },
+  });
+  const adapter = new Last9MetricsAdapter(
+    { TELEMETRY_DIET_LAST9_ORG_SLUG: 'example-org' },
+    { oauth },
+  );
+
+  const connection = await adapter.connect();
+  const snapshot = await adapter.collect();
+
+  assert.ok(connection.tools.includes('prometheus_instant_query'));
+  assert.deepEqual(snapshot.scrapeVolume, {
+    targetsByJob: [{ job: 'dynamo-svc', targetCount: 60 }],
+    samplesByJob: [{ job: 'dynamo-svc', samples: 213882 }, { job: 'api-svc', samples: 151284 }],
+  });
+  assert.equal(snapshot.warnings.length, 3);
+  assert.doesNotMatch(snapshot.warnings.join('\n'), /PromQL query capability/i);
+  assert.deepEqual(
+    calls.filter(({ name }) => name === 'prometheus_instant_query').map(({ args }) => args.query),
+    ['topk(20, sum by (job) (up))', 'topk(20, sum by (job) (scrape_samples_scraped))'],
+  );
+});
+
+test('degrades to a warning, not a failure, when the PromQL query capability is absent or unusable', async () => {
+  const withoutCapability = fakeOAuthClient([
+    { name: 'get_metric_names', inputSchema: { properties: {} } },
+    { name: 'list_alert_rules', inputSchema: { properties: {} } },
+  ], {
+    get_metric_names: ['http_requests_total'],
+    list_alert_rules: { rules: [{ id: 'alert-1', expr: 'http_requests_total' }] },
+  });
+  const adapterWithoutCapability = new Last9MetricsAdapter(
+    { TELEMETRY_DIET_LAST9_ORG_SLUG: 'example-org' },
+    { oauth: withoutCapability.oauth },
+  );
+  await adapterWithoutCapability.connect();
+  const snapshotWithoutCapability = await adapterWithoutCapability.collect();
+  assert.equal(snapshotWithoutCapability.scrapeVolume, null);
+  assert.match(snapshotWithoutCapability.warnings.join('\n'), /PromQL query capability/i);
+
+  const withFailingQuery = fakeOAuthClient([
+    { name: 'get_metric_names', inputSchema: { properties: {} } },
+    { name: 'list_alert_rules', inputSchema: { properties: {} } },
+    { name: 'prometheus_instant_query', annotations: { readOnlyHint: true }, inputSchema: { required: ['query'], properties: { query: {} } } },
+  ], {
+    get_metric_names: ['http_requests_total'],
+    list_alert_rules: { rules: [{ id: 'alert-1', expr: 'http_requests_total' }] },
+    prometheus_instant_query: new Error('SENSITIVE_PROMETHEUS_FAILURE'),
+  });
+  const adapterWithFailingQuery = new Last9MetricsAdapter(
+    { TELEMETRY_DIET_LAST9_ORG_SLUG: 'example-org' },
+    { oauth: withFailingQuery.oauth },
+  );
+  await adapterWithFailingQuery.connect();
+  const snapshotWithFailingQuery = await adapterWithFailingQuery.collect();
+  assert.equal(snapshotWithFailingQuery.scrapeVolume, null);
+  assert.doesNotMatch(snapshotWithFailingQuery.warnings.join('\n'), /SENSITIVE_PROMETHEUS_FAILURE/);
+  assert.equal(snapshotWithFailingQuery.metricNames.length, 1);
+
+  const withMalformedResult = fakeOAuthClient([
+    { name: 'get_metric_names', inputSchema: { properties: {} } },
+    { name: 'list_alert_rules', inputSchema: { properties: {} } },
+    { name: 'prometheus_instant_query', annotations: { readOnlyHint: true }, inputSchema: { required: ['query'], properties: { query: {} } } },
+  ], {
+    get_metric_names: ['http_requests_total'],
+    list_alert_rules: { rules: [{ id: 'alert-1', expr: 'http_requests_total' }] },
+    prometheus_instant_query: { status: 'error', errorType: 'bad_data' },
+  });
+  const adapterWithMalformedResult = new Last9MetricsAdapter(
+    { TELEMETRY_DIET_LAST9_ORG_SLUG: 'example-org' },
+    { oauth: withMalformedResult.oauth },
+  );
+  await adapterWithMalformedResult.connect();
+  const snapshotWithMalformedResult = await adapterWithMalformedResult.collect();
+  assert.equal(snapshotWithMalformedResult.scrapeVolume, null);
+  assert.match(snapshotWithMalformedResult.warnings.join('\n'), /unrecognized response shape/i);
+});
+
+test('rejects a PromQL query tool that is mutating, destructive, or missing the readOnlyHint annotation', async () => {
+  const tools = [
+    { name: 'get_metric_names', inputSchema: { properties: {} } },
+    { name: 'list_alert_rules', inputSchema: { properties: {} } },
+    { name: 'update_prometheus_instant_query', annotations: { readOnlyHint: true }, inputSchema: { required: ['query'], properties: { query: {} } } },
+    { name: 'prometheus_instant_query', annotations: { destructiveHint: true, readOnlyHint: true }, inputSchema: { required: ['query'], properties: { query: {} } } },
+  ];
+  const { oauth } = fakeOAuthClient(tools, {
+    get_metric_names: ['http_requests_total'],
+    list_alert_rules: { rules: [{ id: 'alert-1', expr: 'http_requests_total' }] },
+  });
+  const adapter = new Last9MetricsAdapter(
+    { TELEMETRY_DIET_LAST9_ORG_SLUG: 'example-org' },
+    { oauth },
+  );
+
+  const connection = await adapter.connect();
+  assert.ok(!connection.tools.includes('update_prometheus_instant_query'));
+  assert.ok(!connection.tools.includes('prometheus_instant_query'));
+  const snapshot = await adapter.collect();
+  assert.equal(snapshot.scrapeVolume, null);
 });
 
 test('fails closed when metric inventory exceeds the advertised local result bound', async () => {

@@ -1,4 +1,5 @@
 import { extractMetricNames, PromQlParseError } from './promql.js';
+import { analyzeScrapeVolume } from './volume.js';
 import { createProtectionPolicy } from './whitelist.js';
 
 function unique(values) {
@@ -88,6 +89,8 @@ export function analyzeMetricUsage(snapshot, options = {}) {
     }))
     .sort((left, right) => left.name.localeCompare(right.name));
 
+  const scrapeVolume = analyzeScrapeVolume(snapshot.scrapeVolume ?? null);
+
   return {
     summary: {
       metricCount: metrics.length,
@@ -98,12 +101,14 @@ export function analyzeMetricUsage(snapshot, options = {}) {
       protectedCount: metrics.filter((metric) => metric.protected).length,
     },
     metrics,
+    scrapeVolume,
     warnings: unique(snapshot.warnings),
     unparsedQueries: unique(unparsedQueries),
     limitations: unique([
       ...snapshot.warnings,
       ...parseLimitations,
       ...(hasGenericParseFailure ? ['Some PromQL queries could not be parsed; reference counts may be incomplete.'] : []),
+      ...scrapeVolume.limitations,
     ]),
   };
 }
