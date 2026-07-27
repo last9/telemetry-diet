@@ -4,6 +4,19 @@ function markdownCell(value) {
     .replaceAll('|', '\\|');
 }
 
+function markdownCodeSpan(value) {
+  const content = markdownCell(value);
+  if (!content) return '';
+  const longestBacktickRun = Math.max(
+    0,
+    ...(content.match(/`+/g) ?? []).map((run) => run.length),
+  );
+  const delimiter = '`'.repeat(longestBacktickRun + 1);
+  const needsPadding = /^[`\s]|[`\s]$/.test(content);
+  const padding = needsPadding ? ' ' : '';
+  return `${delimiter}${padding}${content}${padding}${delimiter}`;
+}
+
 export function renderMetricUsageJson(report, { metrics = report.metrics } = {}) {
   return JSON.stringify({ ...report, metrics }, null, 2);
 }
@@ -71,7 +84,7 @@ export function renderMetricUsageMarkdown(report, { metrics = report.metrics } =
       '| Job | Samples per scrape | Observed targets |',
       '| --- | ---: | ---: |',
       ...report.scrapeVolume.topJobs.map(({ job, samplesPerScrape, targetCount }) =>
-        `| \`${markdownCell(job)}\` | ${Math.round(samplesPerScrape)} | ${targetCount ?? '—'} |`),
+        `| ${markdownCodeSpan(job)} | ${Math.round(samplesPerScrape)} | ${targetCount ?? '—'} |`),
       '',
       ...report.scrapeVolume.limitations.map((limitation) => `> ${limitation}`),
       '',

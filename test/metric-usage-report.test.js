@@ -73,6 +73,20 @@ test('Markdown renders the scrape-volume configuration review only when data is 
   assert.match(markdown, /do not measure scrape frequency/i);
   assert.equal(json.scrapeVolume.available, true);
 
+  const withBacktickJob = analyzeMetricUsage({
+    metricNames: ['app_requests_total'],
+    references: [],
+    warnings: [],
+    scrapeVolume: {
+      targetsByJob: [{ job: 'api`worker', targetCount: 2 }],
+      samplesByJob: [{ job: 'api`worker', samples: 42 }],
+    },
+  });
+  assert.match(
+    renderMetricUsageMarkdown(withBacktickJob),
+    /\| ``api`worker`` \| 42 \| 2 \|/,
+  );
+
   const withoutVolume = fixtureReport();
   assert.doesNotMatch(renderMetricUsageMarkdown(withoutVolume), /## Scrape-volume configuration review/);
 });
