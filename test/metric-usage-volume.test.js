@@ -23,7 +23,7 @@ test('ranks jobs by samples per scrape and joins target counts where known', () 
     { job: 'elastit-svc', samplesPerScrape: 69029, targetCount: null },
   ]);
   assert.equal(result.limitations.length, 1);
-  assert.match(result.limitations[0], /scrape interval/i);
+  assert.match(result.limitations[0], /do not measure scrape frequency/i);
 });
 
 test('caps ranked jobs at the top-8 limit', () => {

@@ -96,7 +96,7 @@ test('folds scrape-volume analysis into the report and its limitations', () => {
 
   assert.equal(report.scrapeVolume.available, true);
   assert.deepEqual(report.scrapeVolume.topJobs, [{ job: 'api-svc', samplesPerScrape: 151284, targetCount: 17 }]);
-  assert.match(report.limitations.join('\n'), /scrape interval/i);
+  assert.match(report.limitations.join('\n'), /do not measure scrape frequency/i);
 });
 
 test('omits scrape-volume findings without affecting reference-status analysis when unavailable', () => {

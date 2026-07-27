@@ -1,6 +1,6 @@
 const TOP_JOB_LIMIT = 8;
-const SCRAPE_INTERVAL_LIMITATION =
-  'Scrape interval is a ServiceMonitor/PodMonitor config value and is not visible from ingested metrics; confirm actual intervals before assuming savings.';
+const SCRAPE_VOLUME_LIMITATION =
+  'Samples per scrape do not measure scrape frequency, and observed target counts do not prove duplicate collection; inspect collection configuration before assuming savings.';
 
 function validateScrapeVolume(scrapeVolume) {
   if (scrapeVolume == null) return;
@@ -19,10 +19,9 @@ function unavailable() {
 }
 
 // Ranks jobs by samples scraped per cycle (`scrape_samples_scraped`, summed by job) and
-// joins in target counts (`up`, summed by job) where known. Scrape interval is a direct
-// multiplier on ingestion volume, so this surfaces which ServiceMonitors/PodMonitors are
-// worth reviewing — it never claims an exact samples/sec or byte savings figure, since
-// the interval itself isn't visible from ingested metrics.
+// joins in observed target counts (`up`, counted by job) where known. This surfaces
+// which ServiceMonitors/PodMonitors are worth reviewing without claiming to measure
+// scrape frequency, prove duplicate collection, or estimate exact savings.
 export function analyzeScrapeVolume(scrapeVolume) {
   validateScrapeVolume(scrapeVolume);
   if (!scrapeVolume) return unavailable();
@@ -48,6 +47,6 @@ export function analyzeScrapeVolume(scrapeVolume) {
   return {
     available: true,
     topJobs,
-    limitations: [SCRAPE_INTERVAL_LIMITATION],
+    limitations: [SCRAPE_VOLUME_LIMITATION],
   };
 }

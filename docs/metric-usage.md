@@ -22,10 +22,10 @@ A protected metric prefix is reported separately. Protection does not change usa
 
 The workflow exports Markdown and JSON. It has no delete, disable, or write path.
 
-## Scrape frequency & duplicate collection — optional
+## Scrape-volume configuration review — optional
 
-When the Last9 MCP server advertises a PromQL instant-query capability (e.g. `prometheus_instant_query`), the adapter additionally runs two bounded, read-only queries against the standard Prometheus meta-metrics `up` and `scrape_samples_scraped`, grouped by `job`. This ranks which scrape jobs account for the largest share of samples scraped per cycle — a direct proxy for where a shorter `scrape_interval` (or the same target being scraped by more than one job) is driving ingestion.
+When the Last9 MCP server advertises a PromQL instant-query capability (e.g. `prometheus_instant_query`), the adapter additionally runs two bounded, read-only queries against the standard Prometheus meta-metrics `up` and `scrape_samples_scraped`, grouped by `job`. It ranks jobs by samples scraped per cycle and counts the currently observed target series, including targets whose current `up` value is `0`, for those same ranked jobs.
 
-This is entirely optional: if the query capability isn't advertised, or a query fails or returns an unrecognized shape, the report still completes with the existing reference-status findings — a warning is added and the scrape-frequency section is omitted.
+This is entirely optional: if the query capability isn't advertised, or a query fails, exceeds local analysis bounds, or returns an unrecognized shape, the report still completes with the existing reference-status findings — a warning is added and the scrape-volume section is omitted.
 
-Scrape *interval* itself is a ServiceMonitor/PodMonitor config value and is not visible from ingested metrics, so this section is a review pointer to the highest-volume jobs, not an exact samples/sec or byte savings claim. Confirm actual intervals against the collection config before changing anything.
+This section identifies scrape-volume configuration hotspots. It does not measure scrape frequency, prove duplicate collection, or estimate exact samples-per-second or byte savings. Confirm intervals, target fan-out, and redundant collection against the collection configuration before changing anything.

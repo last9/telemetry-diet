@@ -50,10 +50,10 @@ test('Markdown and JSON reports preserve limitations and source provenance', () 
   assert.match(markdown, /Overview \\| Errors/);
   assert.equal(json.metrics[0].locations[0].sourceId, 'dashboard-1');
   assert.deepEqual(json.summary, report.summary);
-  assert.doesNotMatch(markdown, /Scrape frequency/);
+  assert.doesNotMatch(markdown, /Scrape-volume configuration review/);
 });
 
-test('Markdown renders the scrape-frequency section only when volume data is available', () => {
+test('Markdown renders the scrape-volume configuration review only when data is available', () => {
   const withVolume = analyzeMetricUsage({
     metricNames: ['app_requests_total'],
     references: [],
@@ -66,13 +66,13 @@ test('Markdown renders the scrape-frequency section only when volume data is ava
   const markdown = renderMetricUsageMarkdown(withVolume);
   const json = JSON.parse(renderMetricUsageJson(withVolume));
 
-  assert.match(markdown, /## Scrape frequency & duplicate collection/);
+  assert.match(markdown, /## Scrape-volume configuration review/);
   assert.match(markdown, /`dynamo-svc`/);
   assert.match(markdown, /213882/);
   assert.match(markdown, /60/);
-  assert.match(markdown, /scrape interval/i);
+  assert.match(markdown, /do not measure scrape frequency/i);
   assert.equal(json.scrapeVolume.available, true);
 
   const withoutVolume = fixtureReport();
-  assert.doesNotMatch(renderMetricUsageMarkdown(withoutVolume), /## Scrape frequency/);
+  assert.doesNotMatch(renderMetricUsageMarkdown(withoutVolume), /## Scrape-volume configuration review/);
 });

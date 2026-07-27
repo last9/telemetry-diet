@@ -62,14 +62,13 @@ export function renderMetricUsageMarkdown(report, { metrics = report.metrics } =
 
   if (report.scrapeVolume?.available) {
     lines.push(
-      '## Scrape frequency & duplicate collection',
+      '## Scrape-volume configuration review',
       '',
-      'Scrape interval is a direct multiplier on ingestion volume. The jobs below '
-        + 'account for the largest share of samples scraped per cycle across the org — '
-        + 'review their ServiceMonitor/PodMonitor `scrape_interval` and check for the '
-        + 'same target scraped by more than one job.',
+      'The jobs below account for the largest current sample volume per scrape. Use them '
+        + 'as starting points to inspect ServiceMonitor/PodMonitor `scrape_interval`, '
+        + 'unexpected target fan-out, and redundant collection configuration.',
       '',
-      '| Job | Samples per scrape | Targets |',
+      '| Job | Samples per scrape | Observed targets |',
       '| --- | ---: | ---: |',
       ...report.scrapeVolume.topJobs.map(({ job, samplesPerScrape, targetCount }) =>
         `| \`${markdownCell(job)}\` | ${Math.round(samplesPerScrape)} | ${targetCount ?? '—'} |`),
