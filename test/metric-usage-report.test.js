@@ -50,4 +50,43 @@ test('Markdown and JSON reports preserve limitations and source provenance', () 
   assert.match(markdown, /Overview \\| Errors/);
   assert.equal(json.metrics[0].locations[0].sourceId, 'dashboard-1');
   assert.deepEqual(json.summary, report.summary);
+  assert.doesNotMatch(markdown, /Scrape-volume configuration review/);
+});
+
+test('Markdown renders the scrape-volume configuration review only when data is available', () => {
+  const withVolume = analyzeMetricUsage({
+    metricNames: ['app_requests_total'],
+    references: [],
+    warnings: [],
+    scrapeVolume: {
+      targetsByJob: [{ job: 'dynamo-svc', targetCount: 60 }],
+      samplesByJob: [{ job: 'dynamo-svc', samples: 213882 }],
+    },
+  });
+  const markdown = renderMetricUsageMarkdown(withVolume);
+  const json = JSON.parse(renderMetricUsageJson(withVolume));
+
+  assert.match(markdown, /## Scrape-volume configuration review/);
+  assert.match(markdown, /`dynamo-svc`/);
+  assert.match(markdown, /213882/);
+  assert.match(markdown, /60/);
+  assert.match(markdown, /do not measure scrape frequency/i);
+  assert.equal(json.scrapeVolume.available, true);
+
+  const withBacktickJob = analyzeMetricUsage({
+    metricNames: ['app_requests_total'],
+    references: [],
+    warnings: [],
+    scrapeVolume: {
+      targetsByJob: [{ job: 'api`worker', targetCount: 2 }],
+      samplesByJob: [{ job: 'api`worker', samples: 42 }],
+    },
+  });
+  assert.match(
+    renderMetricUsageMarkdown(withBacktickJob),
+    /\| ``api`worker`` \| 42 \| 2 \|/,
+  );
+
+  const withoutVolume = fixtureReport();
+  assert.doesNotMatch(renderMetricUsageMarkdown(withoutVolume), /## Scrape-volume configuration review/);
 });

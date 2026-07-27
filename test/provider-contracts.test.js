@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { findTool, resultLimitForTool, toolArgs } from '../src/providers/helpers.js';
+import { isSafeLast9ReadTool } from '../src/providers/last9-tool-safety.js';
 import { normalizeLast9Logs } from '../src/providers/last9-normalize.js';
 
 // Contract vector from last9/last9-mcp-server at
@@ -21,6 +22,25 @@ const last9ServiceLogsTool = Object.freeze({
       body_filters: { type: 'array', items: { type: 'string' } },
       env: { type: 'string' },
       index: { type: 'string' },
+    },
+  },
+});
+
+// Contract vector from last9/last9-mcp-server at
+// dae74d3e929b822dcd6d4b031085e5fdc4dc6f2b, internal/apm/apm.go (PromqlInstantQueryArgs,
+// NewPromqlInstantQueryHandler). The handler returns the raw Prometheus instant-query HTTP
+// response body as text content: `{status, data: {resultType, result: [{metric, value}]}}`.
+const last9PrometheusInstantQueryTool = Object.freeze({
+  name: 'prometheus_instant_query',
+  annotations: { readOnlyHint: true },
+  inputSchema: {
+    type: 'object',
+    required: ['query'],
+    properties: {
+      query: { type: 'string' },
+      time_iso: { type: 'string' },
+      lookback_minutes: { type: 'number', minimum: 1 },
+      datasource: { type: 'string' },
     },
   },
 });
@@ -67,6 +87,19 @@ test('current Last9 response contract preserves partial evidence without raw rec
   assert.match(summary.limitations.join('\n'), /one time-range chunk was unavailable/);
   assert.equal(Object.hasOwn(summary, 'logs'), false);
   assert.equal(Object.hasOwn(summary, 'warning'), false);
+});
+
+test('current Last9 PromQL instant-query contract passes the metrics-adapter safety gate on its exact alias', () => {
+  const aliases = ['prometheus_instant_query', 'instant_query', 'query_instant', 'prometheus_query'];
+  assert.equal(isSafeLast9ReadTool(last9PrometheusInstantQueryTool, aliases), true);
+  assert.equal(
+    isSafeLast9ReadTool({ ...last9PrometheusInstantQueryTool, name: 'add_prometheus_instant_query' }, aliases),
+    false,
+  );
+  assert.equal(
+    isSafeLast9ReadTool({ ...last9PrometheusInstantQueryTool, annotations: { destructiveHint: true } }, aliases),
+    false,
+  );
 });
 
 test('current provider catalogs resolve read tools and reject similarly named writes', () => {

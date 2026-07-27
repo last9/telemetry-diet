@@ -4,6 +4,19 @@ function markdownCell(value) {
     .replaceAll('|', '\\|');
 }
 
+function markdownCodeSpan(value) {
+  const content = markdownCell(value);
+  if (!content) return '';
+  const longestBacktickRun = Math.max(
+    0,
+    ...(content.match(/`+/g) ?? []).map((run) => run.length),
+  );
+  const delimiter = '`'.repeat(longestBacktickRun + 1);
+  const needsPadding = /^[`\s]|[`\s]$/.test(content);
+  const padding = needsPadding ? ' ' : '';
+  return `${delimiter}${padding}${content}${padding}${delimiter}`;
+}
+
 export function renderMetricUsageJson(report, { metrics = report.metrics } = {}) {
   return JSON.stringify({ ...report, metrics }, null, 2);
 }
@@ -58,6 +71,24 @@ export function renderMetricUsageMarkdown(report, { metrics = report.metrics } =
     for (const query of report.unparsedQueries) {
       lines.push('```promql', query, '```', '');
     }
+  }
+
+  if (report.scrapeVolume?.available) {
+    lines.push(
+      '## Scrape-volume configuration review',
+      '',
+      'The jobs below account for the largest current sample volume per scrape. Use them '
+        + 'as starting points to inspect ServiceMonitor/PodMonitor `scrape_interval`, '
+        + 'unexpected target fan-out, and redundant collection configuration.',
+      '',
+      '| Job | Samples per scrape | Observed targets |',
+      '| --- | ---: | ---: |',
+      ...report.scrapeVolume.topJobs.map(({ job, samplesPerScrape, targetCount }) =>
+        `| ${markdownCodeSpan(job)} | ${Math.round(samplesPerScrape)} | ${targetCount ?? '—'} |`),
+      '',
+      ...report.scrapeVolume.limitations.map((limitation) => `> ${limitation}`),
+      '',
+    );
   }
 
   return lines.join('\n').trimEnd();
