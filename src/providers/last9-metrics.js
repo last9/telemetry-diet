@@ -43,6 +43,9 @@ const CAPABILITIES = {
 };
 
 const MAX_QUERY_RESULT_SERIES = 200;
+const TOP_SCRAPE_JOBS_QUERY = 'topk(20, sum by (job) (scrape_samples_scraped))';
+const TARGETS_FOR_TOP_SCRAPE_JOBS_QUERY =
+  'count by (job) (up) and on (job) topk(20, sum by (job) (scrape_samples_scraped))';
 
 function normalizedWords(value) {
   return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
@@ -659,23 +662,23 @@ export class Last9MetricsAdapter {
     };
   }
 
-  // Best-effort, optional: scrape-target count and per-cycle sample volume by job,
-  // via the standard Prometheus `up` / `scrape_samples_scraped` meta-metrics. Powers
-  // the scrape-frequency/duplicate-collection review in the metric-usage report.
+  // Best-effort, optional: observed scrape-target count and per-cycle sample volume by
+  // job, via the standard Prometheus `up` / `scrape_samples_scraped` meta-metrics.
+  // Powers the scrape-volume configuration review in the metric-usage report.
   // Never throws — absence or failure only adds a warning, since reference-status
   // analysis is complete without it.
   async collectScrapeVolume(warnings) {
     if (!this.capabilities.query) {
-      warnings.push('Last9 MCP does not advertise a PromQL query capability; scrape-frequency/duplicate-collection volume was not analyzed.');
+      warnings.push('Last9 MCP does not advertise a PromQL query capability; scrape-volume configuration was not reviewed.');
       return null;
     }
     try {
       const [targets, samples] = await Promise.all([
-        this.runInstantQuery('topk(20, sum by (job) (up))'),
-        this.runInstantQuery('topk(20, sum by (job) (scrape_samples_scraped))'),
+        this.runInstantQuery(TARGETS_FOR_TOP_SCRAPE_JOBS_QUERY),
+        this.runInstantQuery(TOP_SCRAPE_JOBS_QUERY),
       ]);
       if (!targets || !samples) {
-        warnings.push('Last9 PromQL query tool returned an unrecognized response shape; scrape-frequency/duplicate-collection volume was not analyzed.');
+        warnings.push('Last9 PromQL query tool returned an unrecognized response shape; scrape-volume configuration was not reviewed.');
         return null;
       }
       return {
@@ -683,8 +686,10 @@ export class Last9MetricsAdapter {
         samplesByJob: samples.map(({ job, value }) => ({ job, samples: value })),
       };
     } catch (error) {
-      if (error?.message === BOUNDS_ERROR) throw error;
-      warnings.push('Could not run the scrape-frequency/duplicate-collection PromQL queries; the read request failed.');
+      const reason = error?.message === BOUNDS_ERROR
+        ? 'the response exceeded safe analysis bounds'
+        : 'the read request failed';
+      warnings.push(`Could not complete the scrape-volume configuration review; ${reason}.`);
       return null;
     }
   }

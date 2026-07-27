@@ -59,3 +59,31 @@ test('Last9 connection applies the shared fail-closed tool safety policy', async
   assert.deepEqual(connection.tools, ['get_service_summary', 'tenant_get_metric_names']);
   await adapter.close();
 });
+
+test('Last9 connection advertises every safe PromQL instant-query alias', async () => {
+  const queryAliases = [
+    'prometheus_instant_query',
+    'instant_query',
+    'query_instant',
+    'prometheus_query',
+  ];
+  const tools = [
+    ...queryAliases.map((name) => ({
+      name,
+      annotations: { readOnlyHint: true },
+      inputSchema: { required: ['query'], properties: { query: {} } },
+    })),
+    {
+      name: 'update_prometheus_instant_query',
+      annotations: { readOnlyHint: true },
+      inputSchema: { required: ['query'], properties: { query: {} } },
+    },
+  ];
+  const { oauth } = fakeOAuthClient(tools, {});
+  const adapter = new Last9SessionAdapter(env, { oauth });
+
+  const connection = await adapter.connect();
+
+  assert.deepEqual(connection.tools, queryAliases);
+  await adapter.close();
+});

@@ -53,7 +53,7 @@ test('collects metric inventory and preserves exact query provenance from advert
   assert.deepEqual(snapshot.metricNames, ['http_requests_total', 'queue_depth']);
   assert.equal(snapshot.capturedAt, '2026-07-15T00:00:00.000Z');
   assert.deepEqual(snapshot.warnings, [
-    'Last9 MCP does not advertise a PromQL query capability; scrape-frequency/duplicate-collection volume was not analyzed.',
+    'Last9 MCP does not advertise a PromQL query capability; scrape-volume configuration was not reviewed.',
   ]);
   assert.equal(snapshot.scrapeVolume, null);
   assert.deepEqual(snapshot.references, [
@@ -316,7 +316,7 @@ test('fails closed with sanitized errors for unusable inventory and failed refer
   );
 });
 
-test('collects scrape-frequency/duplicate-collection volume via the resolved PromQL query capability', async () => {
+test('collects aligned scrape-volume configuration evidence via the resolved PromQL query capability', async () => {
   const tools = [
     { name: 'get_metric_names', inputSchema: { properties: {} } },
     { name: 'list_alert_rules', inputSchema: { properties: {} } },
@@ -326,7 +326,7 @@ test('collects scrape-frequency/duplicate-collection volume via the resolved Pro
     get_metric_names: ['http_requests_total'],
     list_alert_rules: { rules: [{ id: 'alert-1', expr: 'http_requests_total' }] },
     prometheus_instant_query: (args) => {
-      if (args.query.includes('scrape_samples_scraped')) {
+      if (args.query.startsWith('topk')) {
         return {
           status: 'success',
           data: {
@@ -342,7 +342,10 @@ test('collects scrape-frequency/duplicate-collection volume via the resolved Pro
         status: 'success',
         data: {
           resultType: 'vector',
-          result: [{ metric: { job: 'dynamo-svc' }, value: [1700000000, '60'] }],
+          result: [
+            { metric: { job: 'dynamo-svc' }, value: [1700000000, '60'] },
+            { metric: { job: 'api-svc' }, value: [1700000000, '17'] },
+          ],
         },
       };
     },
@@ -357,14 +360,17 @@ test('collects scrape-frequency/duplicate-collection volume via the resolved Pro
 
   assert.ok(connection.tools.includes('prometheus_instant_query'));
   assert.deepEqual(snapshot.scrapeVolume, {
-    targetsByJob: [{ job: 'dynamo-svc', targetCount: 60 }],
+    targetsByJob: [{ job: 'dynamo-svc', targetCount: 60 }, { job: 'api-svc', targetCount: 17 }],
     samplesByJob: [{ job: 'dynamo-svc', samples: 213882 }, { job: 'api-svc', samples: 151284 }],
   });
   assert.equal(snapshot.warnings.length, 3);
   assert.doesNotMatch(snapshot.warnings.join('\n'), /PromQL query capability/i);
   assert.deepEqual(
     calls.filter(({ name }) => name === 'prometheus_instant_query').map(({ args }) => args.query),
-    ['topk(20, sum by (job) (up))', 'topk(20, sum by (job) (scrape_samples_scraped))'],
+    [
+      'count by (job) (up) and on (job) topk(20, sum by (job) (scrape_samples_scraped))',
+      'topk(20, sum by (job) (scrape_samples_scraped))',
+    ],
   );
 });
 
@@ -421,6 +427,48 @@ test('degrades to a warning, not a failure, when the PromQL query capability is 
   const snapshotWithMalformedResult = await adapterWithMalformedResult.collect();
   assert.equal(snapshotWithMalformedResult.scrapeVolume, null);
   assert.match(snapshotWithMalformedResult.warnings.join('\n'), /unrecognized response shape/i);
+});
+
+test('keeps oversized optional scrape-volume query results fail-open', async () => {
+  const oversizedResults = [
+    Array.from({ length: 201 }, (_, index) => ({
+      metric: { job: `job-${index}` },
+      value: [1700000000, '1'],
+    })),
+    [{ metric: { job: `oversized-${'x'.repeat(1025)}` }, value: [1700000000, '1'] }],
+  ];
+
+  for (const oversizedResult of oversizedResults) {
+    const { oauth } = fakeOAuthClient([
+      { name: 'get_metric_names', inputSchema: { properties: {} } },
+      { name: 'list_alert_rules', inputSchema: { properties: {} } },
+      { name: 'prometheus_instant_query', annotations: { readOnlyHint: true }, inputSchema: { required: ['query'], properties: { query: {} } } },
+    ], {
+      get_metric_names: ['http_requests_total'],
+      list_alert_rules: { rules: [{ id: 'alert-1', expr: 'http_requests_total' }] },
+      prometheus_instant_query: (args) => ({
+        status: 'success',
+        data: {
+          resultType: 'vector',
+          result: args.query.startsWith('count by')
+            ? oversizedResult
+            : [{ metric: { job: 'api-svc' }, value: [1700000000, '151284'] }],
+        },
+      }),
+    });
+    const adapter = new Last9MetricsAdapter(
+      { TELEMETRY_DIET_LAST9_ORG_SLUG: 'example-org' },
+      { oauth },
+    );
+
+    await adapter.connect();
+    const snapshot = await adapter.collect();
+
+    assert.equal(snapshot.scrapeVolume, null);
+    assert.equal(snapshot.metricNames.length, 1);
+    assert.match(snapshot.warnings.join('\n'), /exceeded safe analysis bounds/i);
+    assert.doesNotMatch(snapshot.warnings.join('\n'), /oversized-|job-200/i);
+  }
 });
 
 test('rejects a PromQL query tool that is mutating, destructive, or missing the readOnlyHint annotation', async () => {
