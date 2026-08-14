@@ -1,19 +1,9 @@
 #!/usr/bin/env node
 import { spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { createTelemetryDietServer, listen } from '../src/server.js';
 
 const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
-
-function loadLocalConfig() {
-  try {
-    const localConfig = JSON.parse(readFileSync(join(process.cwd(), '.telemetry-diet.json'), 'utf8'));
-    if (localConfig.last9OrgSlug && !process.env.TELEMETRY_DIET_LAST9_ORG_SLUG) {
-      process.env.TELEMETRY_DIET_LAST9_ORG_SLUG = localConfig.last9OrgSlug;
-    }
-  } catch { /* Local configuration is optional. */ }
-}
 
 function parseArgs(argv) {
   const result = { host: '127.0.0.1', port: Number(process.env.PORT || 4545), open: true };
@@ -52,7 +42,6 @@ async function main() {
     return;
   }
 
-  loadLocalConfig();
   const server = createTelemetryDietServer();
   const address = await listen(server, options);
   server.setBaseUrl(address.url);

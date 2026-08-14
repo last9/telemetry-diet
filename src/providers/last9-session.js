@@ -61,9 +61,6 @@ export class Last9SessionAdapter {
 
   async connect() {
     const config = resolveLast9McpConfig(this.env);
-    if (!config.configured) {
-      throw new Error('Last9 organization is not configured. Set TELEMETRY_DIET_LAST9_ORG_SLUG once, then use provider login.');
-    }
     this.client = await createMcpClient({
       label: 'Last9',
       envPrefix: 'TELEMETRY_DIET_LAST9',

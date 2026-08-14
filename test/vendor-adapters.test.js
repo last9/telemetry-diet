@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { DatadogAdapter, datadogAggregateQueries, resolveDatadogMcpConfig } from '../src/providers/datadog.js';
-import { Last9Adapter } from '../src/providers/last9.js';
+import { Last9Adapter, resolveLast9McpConfig } from '../src/providers/last9.js';
 
 const timeWindow = { start: '2026-07-14T10:00:00.000Z', end: '2026-07-14T16:00:00.000Z' };
 const normalized = {
@@ -16,6 +16,27 @@ test('Datadog MCP configuration defaults to provider OAuth', () => {
   assert.deepEqual(resolveDatadogMcpConfig({ TELEMETRY_DIET_DATADOG_MCP_URL: 'https://example.test/mcp' }).mode, 'hosted-oauth');
   assert.deepEqual(resolveDatadogMcpConfig({ TELEMETRY_DIET_DATADOG_MCP_TOKEN: 'token' }).mode, 'http-token');
   assert.deepEqual(resolveDatadogMcpConfig({ TELEMETRY_DIET_DATADOG_MCP_COMMAND: '["datadog-mcp"]' }).mode, 'custom-command');
+});
+
+test('Last9 MCP configuration defaults to org-less provider OAuth', () => {
+  assert.deepEqual(resolveLast9McpConfig({}), {
+    url: 'https://app.last9.io/api/mcp',
+    token: undefined,
+    command: undefined,
+    args: undefined,
+    configured: true,
+    mode: 'hosted-oauth',
+  });
+  assert.equal(resolveLast9McpConfig({ TELEMETRY_DIET_LAST9_MCP_URL: 'https://example.test/mcp' }).url, 'https://example.test/mcp');
+  assert.equal(resolveLast9McpConfig({ TELEMETRY_DIET_LAST9_MCP_TOKEN: 'token' }).mode, 'http-token');
+  assert.deepEqual(resolveLast9McpConfig({ TELEMETRY_DIET_LAST9_MCP_COMMAND: '["last9-mcp"]' }), {
+    url: undefined,
+    token: undefined,
+    command: '["last9-mcp"]',
+    args: undefined,
+    configured: true,
+    mode: 'custom-command',
+  });
 });
 
 test('Datadog adapter uses service discovery and aggregate analysis read tools', async () => {

@@ -20,6 +20,8 @@ test('OAuth provider lifecycle keeps credentials in memory and validates state e
   assert.equal(provider.redirectUrl, 'http://127.0.0.1:4545/oauth/callback/last9');
   assert.deepEqual(provider.clientMetadata.redirect_uris, [provider.redirectUrl]);
   assert.equal(provider.clientMetadata.token_endpoint_auth_method, 'none');
+  assert.deepEqual(provider.clientMetadata.grant_types, ['authorization_code']);
+  assert.equal(provider.clientMetadata.scope, 'read');
   const state = provider.state();
   assert.equal(provider.state(), state);
   assert.equal(provider.validateState(state), true);
@@ -45,6 +47,16 @@ test('OAuth provider lifecycle keeps credentials in memory and validates state e
   assert.equal(provider.validateState(state), false);
   assert.equal(provider.authorizationUrl, undefined);
   assert.throws(() => provider.codeVerifier(), /missing/);
+});
+
+test('Last9 requests only its read scope without changing other provider registrations', () => {
+  const last9 = managerWithClient('last9').client.session.oauthProvider.clientMetadata;
+  const datadog = managerWithClient('datadog').client.session.oauthProvider.clientMetadata;
+
+  assert.deepEqual(last9.grant_types, ['authorization_code']);
+  assert.equal(last9.scope, 'read');
+  assert.deepEqual(datadog.grant_types, ['authorization_code', 'refresh_token']);
+  assert.equal(datadog.scope, undefined);
 });
 
 test('OAuth session manager validates endpoints and reuses only matching sessions', () => {

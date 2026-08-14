@@ -4,7 +4,7 @@
 
 The default Datadog and Last9 paths use the official hosted Streamable HTTP MCP endpoints and provider OAuth. Telemetry Diet implements the MCP authorization flow locally with PKCE and OAuth state validation. Tokens remain in process memory, never enter browser application state, and are discarded when the CLI stops.
 
-Datadog needs no default configuration. Last9's hosted endpoint is organization-scoped, so set `TELEMETRY_DIET_LAST9_ORG_SLUG` or place the non-secret `last9OrgSlug` in `.telemetry-diet.json` before starting the app.
+Datadog and Last9 need no default endpoint configuration. Last9 uses its organization-independent hosted MCP endpoint and resolves account context during provider login. Telemetry Diet requests only the Last9 `read` OAuth scope.
 
 Telemetry Diet is an MCP client. It does not require Datadog or Last9 to implement a custom `o11y_*` protocol. Each adapter inspects `tools/list`, selects known provider tools, supplies arguments based on each tool's advertised input schema, and normalizes the result into the internal telemetry-summary model.
 

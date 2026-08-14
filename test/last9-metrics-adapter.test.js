@@ -42,7 +42,7 @@ test('collects metric inventory and preserves exact query provenance from advert
     },
   });
   const adapter = new Last9MetricsAdapter(
-    { TELEMETRY_DIET_LAST9_ORG_SLUG: 'example-org' },
+    {},
     { oauth, now: () => new Date('2026-07-15T00:00:00Z') },
   );
 
@@ -85,7 +85,7 @@ test('warns for unavailable optional reference sources without exposing tool err
     get_grafana_dashboards: new Error('upstream rejected SENSITIVE_VALUE_DO_NOT_ECHO'),
   });
   const adapter = new Last9MetricsAdapter(
-    { TELEMETRY_DIET_LAST9_ORG_SLUG: 'example-org' },
+    {},
     { oauth, now: () => new Date('2026-07-15T00:00:00Z') },
   );
 
@@ -123,7 +123,7 @@ test('maps advertised inventory and per-entity indicator schemas without broaden
     }],
   });
   const adapter = new Last9MetricsAdapter(
-    { TELEMETRY_DIET_LAST9_ORG_SLUG: 'example-org' },
+    {},
     { oauth, now: () => new Date('2026-07-15T00:00:00Z') },
   );
 
@@ -177,7 +177,7 @@ test('follows the Last9 dashboard detail and alert config response contracts', a
     get_alerts: new Error('firing alerts must not be queried for metric definitions'),
   });
   const adapter = new Last9MetricsAdapter(
-    { TELEMETRY_DIET_LAST9_ORG_SLUG: 'example-org' },
+    {},
     { oauth, now: () => new Date('2026-07-15T00:00:00Z') },
   );
 
@@ -212,7 +212,7 @@ test('fails closed when inventory or every reference capability is unavailable',
     { name: 'list_alert_rules' },
   ], {});
   const inventoryAdapter = new Last9MetricsAdapter(
-    { TELEMETRY_DIET_LAST9_ORG_SLUG: 'example-org' },
+    {},
     { oauth: withoutInventory.oauth },
   );
   await assert.rejects(inventoryAdapter.connect(), /read-only metric-name inventory capability/i);
@@ -224,7 +224,7 @@ test('fails closed when inventory or every reference capability is unavailable',
     { name: 'run_alert_rules', description: 'Run alert rule evaluation' },
   ], {});
   const referenceAdapter = new Last9MetricsAdapter(
-    { TELEMETRY_DIET_LAST9_ORG_SLUG: 'example-org' },
+    {},
     { oauth: withoutReferences.oauth },
   );
   await assert.rejects(referenceAdapter.connect(), /at least one read-only metric-reference capability/i);
@@ -241,7 +241,7 @@ test('rejects mutating, destructive, and unannotated suffix-compatible tools', a
   ];
   const unsafe = fakeOAuthClient(unsafeTools, {});
   const unsafeAdapter = new Last9MetricsAdapter(
-    { TELEMETRY_DIET_LAST9_ORG_SLUG: 'example-org' },
+    {},
     { oauth: unsafe.oauth },
   );
 
@@ -255,7 +255,7 @@ test('rejects mutating, destructive, and unannotated suffix-compatible tools', a
     list_alert_rules: { rules: [] },
   });
   const safeAdapter = new Last9MetricsAdapter(
-    { TELEMETRY_DIET_LAST9_ORG_SLUG: 'example-org' },
+    {},
     { oauth: safe.oauth },
   );
 
@@ -271,7 +271,7 @@ test('fails closed when entity-scoped indicators cannot make a real reference re
     get_metric_names: ['http_requests_total'],
   });
   const adapter = new Last9MetricsAdapter(
-    { TELEMETRY_DIET_LAST9_ORG_SLUG: 'example-org' },
+    {},
     { oauth },
   );
 
@@ -288,7 +288,7 @@ test('fails closed with sanitized errors for unusable inventory and failed refer
     get_metric_names: new Error('SENSITIVE_INVENTORY_FAILURE'),
   });
   const inventoryAdapter = new Last9MetricsAdapter(
-    { TELEMETRY_DIET_LAST9_ORG_SLUG: 'example-org' },
+    {},
     { oauth: inventoryFailure.oauth },
   );
   await inventoryAdapter.connect();
@@ -305,7 +305,7 @@ test('fails closed with sanitized errors for unusable inventory and failed refer
     list_alert_rules: new Error('SENSITIVE_REFERENCE_FAILURE'),
   });
   const referenceAdapter = new Last9MetricsAdapter(
-    { TELEMETRY_DIET_LAST9_ORG_SLUG: 'example-org' },
+    {},
     { oauth: referenceFailure.oauth },
   );
   await referenceAdapter.connect();
@@ -351,7 +351,7 @@ test('collects aligned scrape-volume configuration evidence via the resolved Pro
     },
   });
   const adapter = new Last9MetricsAdapter(
-    { TELEMETRY_DIET_LAST9_ORG_SLUG: 'example-org' },
+    {},
     { oauth },
   );
 
@@ -383,7 +383,7 @@ test('degrades to a warning, not a failure, when the PromQL query capability is 
     list_alert_rules: { rules: [{ id: 'alert-1', expr: 'http_requests_total' }] },
   });
   const adapterWithoutCapability = new Last9MetricsAdapter(
-    { TELEMETRY_DIET_LAST9_ORG_SLUG: 'example-org' },
+    {},
     { oauth: withoutCapability.oauth },
   );
   await adapterWithoutCapability.connect();
@@ -401,7 +401,7 @@ test('degrades to a warning, not a failure, when the PromQL query capability is 
     prometheus_instant_query: new Error('SENSITIVE_PROMETHEUS_FAILURE'),
   });
   const adapterWithFailingQuery = new Last9MetricsAdapter(
-    { TELEMETRY_DIET_LAST9_ORG_SLUG: 'example-org' },
+    {},
     { oauth: withFailingQuery.oauth },
   );
   await adapterWithFailingQuery.connect();
@@ -420,7 +420,7 @@ test('degrades to a warning, not a failure, when the PromQL query capability is 
     prometheus_instant_query: { status: 'error', errorType: 'bad_data' },
   });
   const adapterWithMalformedResult = new Last9MetricsAdapter(
-    { TELEMETRY_DIET_LAST9_ORG_SLUG: 'example-org' },
+    {},
     { oauth: withMalformedResult.oauth },
   );
   await adapterWithMalformedResult.connect();
@@ -457,7 +457,7 @@ test('keeps oversized optional scrape-volume query results fail-open', async () 
       }),
     });
     const adapter = new Last9MetricsAdapter(
-      { TELEMETRY_DIET_LAST9_ORG_SLUG: 'example-org' },
+      {},
       { oauth },
     );
 
@@ -483,7 +483,7 @@ test('rejects a PromQL query tool that is mutating, destructive, or missing the 
     list_alert_rules: { rules: [{ id: 'alert-1', expr: 'http_requests_total' }] },
   });
   const adapter = new Last9MetricsAdapter(
-    { TELEMETRY_DIET_LAST9_ORG_SLUG: 'example-org' },
+    {},
     { oauth },
   );
 
@@ -503,7 +503,7 @@ test('fails closed when metric inventory exceeds the advertised local result bou
     list_alert_rules: { rules: [] },
   });
   const adapter = new Last9MetricsAdapter(
-    { TELEMETRY_DIET_LAST9_ORG_SLUG: 'example-org' },
+    {},
     { oauth },
   );
 
@@ -529,7 +529,7 @@ test('fails closed when normalized references or evidence strings exceed local b
     },
   });
   const referencesAdapter = new Last9MetricsAdapter(
-    { TELEMETRY_DIET_LAST9_ORG_SLUG: 'example-org' },
+    {},
     { oauth: oversizedReferences.oauth },
   );
   await referencesAdapter.connect();
@@ -543,7 +543,7 @@ test('fails closed when normalized references or evidence strings exceed local b
     list_alert_rules: { rules: [{ id: 'alert-1', expr: 'x'.repeat(16385) }] },
   });
   const queryAdapter = new Last9MetricsAdapter(
-    { TELEMETRY_DIET_LAST9_ORG_SLUG: 'example-org' },
+    {},
     { oauth: oversizedQuery.oauth },
   );
   await queryAdapter.connect();
@@ -561,7 +561,7 @@ test('fails closed when normalized references or evidence strings exceed local b
     list_alert_rules: { rules: [{ id: 'alert-1', name: 's'.repeat(1025), expr: 'http_requests_total' }] },
   });
   const sourceAdapter = new Last9MetricsAdapter(
-    { TELEMETRY_DIET_LAST9_ORG_SLUG: 'example-org' },
+    {},
     { oauth: oversizedSource.oauth },
   );
   await sourceAdapter.connect();
