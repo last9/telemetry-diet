@@ -2,19 +2,18 @@ import { createMcpClient } from '../mcp/client.js';
 import { findTool, providerQuery, resultLimitForTool, toolArgs } from './helpers.js';
 import { environmentsFromLast9, normalizeLast9Logs, policiesFromLast9, servicesFromLast9Summary } from './last9-normalize.js';
 
+const LAST9_MCP_URL = 'https://app.last9.io/api/mcp';
+
 export function resolveLast9McpConfig(env = process.env) {
-  const url = env.TELEMETRY_DIET_LAST9_MCP_URL;
+  const url = env.TELEMETRY_DIET_LAST9_MCP_URL || LAST9_MCP_URL;
   const explicitCommand = env.TELEMETRY_DIET_LAST9_MCP_COMMAND;
-  const orgSlug = env.TELEMETRY_DIET_LAST9_ORG_SLUG;
-  const hostedUrl = orgSlug ? `https://app.last9.io/api/v4/organizations/${orgSlug}/mcp` : undefined;
   return {
-    url: explicitCommand ? undefined : (url || hostedUrl),
+    url: explicitCommand ? undefined : url,
     token: env.TELEMETRY_DIET_LAST9_MCP_TOKEN,
     command: explicitCommand,
     args: env.TELEMETRY_DIET_LAST9_MCP_ARGS,
-    configured: Boolean(url || explicitCommand || hostedUrl),
-    mode: explicitCommand ? 'custom-command' : env.TELEMETRY_DIET_LAST9_MCP_TOKEN ? 'http-token' : hostedUrl || url ? 'hosted-oauth' : 'not-configured',
-    orgSlug,
+    configured: true,
+    mode: explicitCommand ? 'custom-command' : env.TELEMETRY_DIET_LAST9_MCP_TOKEN ? 'http-token' : 'hosted-oauth',
   };
 }
 
@@ -28,7 +27,6 @@ export class Last9Adapter {
 
   async connect() {
     const config = resolveLast9McpConfig(this.env);
-    if (!config.configured) throw new Error('Last9 organization is not configured. Set TELEMETRY_DIET_LAST9_ORG_SLUG once, then use provider login.');
     this.client = await createMcpClient({
       label: 'Last9', envPrefix: 'TELEMETRY_DIET_LAST9',
       url: config.url,

@@ -178,7 +178,7 @@ export function createTelemetryDietServer({ env = process.env } = {}) {
         providers: {
           sample: { configured: true, credentialless: true },
           datadog: { configured: datadog.configured, mode: datadog.mode },
-          last9: { configured: last9.configured, mode: last9.mode, orgSlug: last9.orgSlug },
+          last9: { configured: last9.configured, mode: last9.mode },
         },
         trust: { readOnly: true, productionWrites: false, aiRawLogAccess: false },
       });

@@ -120,14 +120,7 @@ The Last9 log adapter targets:
 - `get_drop_rules`
 - `did_you_mean` when available
 
-The Last9 hosted endpoint includes the organization slug from `app.last9.io/<org_slug>/…`. Once that non-secret endpoint is configured, click **Log in with Last9** and complete OAuth on Last9. OAuth tokens stay in the local Telemetry Diet process and expire when it stops.
-
-For another organization, set the slug before starting the app:
-
-```bash
-export TELEMETRY_DIET_LAST9_ORG_SLUG='your-org'
-npx telemetry-diet
-```
+The default Last9 connection uses the organization-independent hosted MCP endpoint. No organization slug or endpoint configuration is required: click **Log in with Last9** and complete OAuth on Last9. OAuth tokens stay in the local Telemetry Diet process and expire when it stops. Telemetry Diet requests only the Last9 `read` OAuth scope.
 
 Configure hosted/HTTP MCP:
 

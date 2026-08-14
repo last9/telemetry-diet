@@ -45,7 +45,7 @@ test('prefers advertised read-only aggregate trace analysis and returns only nor
     },
   });
   const adapter = new Last9TracesAdapter(
-    { TELEMETRY_DIET_LAST9_ORG_SLUG: 'example-org' },
+    {},
     { oauth },
   );
 
@@ -119,7 +119,7 @@ test('uses a bounded trace-search fallback and keeps unmeasured bytes unknown', 
     get_service_traces: { traces: [{ trace_id: 'private-trace-id', spans }] },
   });
   const adapter = new Last9TracesAdapter(
-    { TELEMETRY_DIET_LAST9_ORG_SLUG: 'example-org' },
+    {},
     { oauth },
   );
 
@@ -183,7 +183,7 @@ test('normalizes the Last9 get_service_traces span kind and status constants', a
     },
   });
   const adapter = new Last9TracesAdapter(
-    { TELEMETRY_DIET_LAST9_ORG_SLUG: 'example-org' },
+    {},
     { oauth },
   );
 
@@ -231,7 +231,7 @@ test('normalizes direct aggregate lists without inventing bytes or savings', asy
     }],
   });
   const adapter = new Last9TracesAdapter(
-    { TELEMETRY_DIET_LAST9_ORG_SLUG: 'example-org' },
+    {},
     { oauth },
   );
 
@@ -259,7 +259,7 @@ test('fails closed for unsafe or unbounded capabilities and unrecognizable aggre
     { name: 'search_traces', description: 'Search traces', inputSchema: { properties: { query: {} } } },
   ], {});
   const unsafeAdapter = new Last9TracesAdapter(
-    { TELEMETRY_DIET_LAST9_ORG_SLUG: 'example-org' },
+    {},
     { oauth: unsafe.oauth },
   );
   await assert.rejects(
@@ -279,7 +279,7 @@ test('fails closed for unsafe or unbounded capabilities and unrecognizable aggre
     },
   });
   const malformedAdapter = new Last9TracesAdapter(
-    { TELEMETRY_DIET_LAST9_ORG_SLUG: 'example-org' },
+    {},
     { oauth: malformed.oauth },
   );
   await malformedAdapter.connect();
@@ -300,7 +300,7 @@ test('fails closed for unsafe or unbounded capabilities and unrecognizable aggre
     get_trace_aggregates: new Error('sensitive upstream credential detail'),
   });
   const failedCallAdapter = new Last9TracesAdapter(
-    { TELEMETRY_DIET_LAST9_ORG_SLUG: 'example-org' },
+    {},
     { oauth: failedCall.oauth },
   );
   await failedCallAdapter.connect();
@@ -334,7 +334,7 @@ test('rejects mutating trace tools even when their descriptions and annotations 
   });
   const { oauth } = fakeOAuthClient(tools, {});
   const adapter = new Last9TracesAdapter(
-    { TELEMETRY_DIET_LAST9_ORG_SLUG: 'example-org' },
+    {},
     { oauth },
   );
 
@@ -358,7 +358,7 @@ test('fails closed when aggregate trace evidence exceeds response bounds', async
     },
   });
   const oversizedAdapter = new Last9TracesAdapter(
-    { TELEMETRY_DIET_LAST9_ORG_SLUG: 'example-org' },
+    {},
     { oauth: oversized.oauth },
   );
   await oversizedAdapter.connect();
@@ -381,7 +381,7 @@ test('fails closed when aggregate trace evidence exceeds response bounds', async
     },
   });
   const oversizedAttributesAdapter = new Last9TracesAdapter(
-    { TELEMETRY_DIET_LAST9_ORG_SLUG: 'example-org' },
+    {},
     { oauth: oversizedAttributes.oauth },
   );
   await oversizedAttributesAdapter.connect();
@@ -400,7 +400,7 @@ test('fails closed when aggregate trace evidence exceeds response bounds', async
     },
   });
   const oversizedStringAdapter = new Last9TracesAdapter(
-    { TELEMETRY_DIET_LAST9_ORG_SLUG: 'example-org' },
+    {},
     { oauth: oversizedString.oauth },
   );
   await oversizedStringAdapter.connect();
@@ -431,7 +431,7 @@ test('scopes a bounded search_traces fallback with the advertised query schema',
     },
   });
   const adapter = new Last9TracesAdapter(
-    { TELEMETRY_DIET_LAST9_ORG_SLUG: 'example-org' },
+    {},
     { oauth },
   );
 
