@@ -5,7 +5,7 @@ import { createProvider } from '../src/providers/index.js';
 import { Last9SessionAdapter } from '../src/providers/last9-session.js';
 import { fakeOAuthClient } from './helpers/fake-oauth-client.js';
 
-const env = { TELEMETRY_DIET_LAST9_ORG_SLUG: 'example-org' };
+const env = {};
 
 test('Last9 connection accepts a metric-only read session', async () => {
   const tools = [

@@ -2,6 +2,12 @@
 
 All notable changes to Telemetry Diet are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- Updated the default Last9 OAuth flow to use the organization-independent hosted MCP endpoint with an explicit read-only scope; an organization slug is no longer required.
+
 ## [0.1.0] - 2026-07-17
 
 First public release.

@@ -37,13 +37,15 @@ class LocalOAuthProvider {
   get redirectUrl() { return this._redirectUrl; }
 
   get clientMetadata() {
+    const last9 = this.provider === 'last9';
     return {
       client_name: 'Telemetry Diet',
       client_uri: 'https://github.com/last9/telemetry-diet',
       redirect_uris: [this._redirectUrl],
-      grant_types: ['authorization_code', 'refresh_token'],
+      grant_types: last9 ? ['authorization_code'] : ['authorization_code', 'refresh_token'],
       response_types: ['code'],
       token_endpoint_auth_method: 'none',
+      ...(last9 ? { scope: 'read' } : {}),
     };
   }
 
