@@ -1,6 +1,6 @@
 {
   "name": "telemetry-diet",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Local, read-only observability workbench for reviewable telemetry reduction drafts",
   "repository": {
     "type": "git",
