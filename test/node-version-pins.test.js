@@ -17,6 +17,16 @@ test('engines.node admits only Node releases with the eMudhra blocklist', () => 
   assert.equal(manifest.engines.node, SUPPORTED_ENGINES);
 });
 
+test('CI tests the patched floors of both LTS lines', () => {
+  const ci = readRepoFile('.github/workflows/ci.yml');
+  assert.match(ci, /^\s+node-version: \[22\.23\.4, 24\.22\.1\]$/m);
+});
+
+test('releases are published from the patched Node 24 floor', () => {
+  const release = readRepoFile('.github/workflows/release.yml');
+  assert.deepEqual(release.match(/^\s+node-version: (.+)$/gm), ['          node-version: 24.22.1']);
+});
+
 test('install docs state the patched Node floors', () => {
   for (const path of ['README.md', 'CONTRIBUTING.md']) {
     const doc = readRepoFile(path);
