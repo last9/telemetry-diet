@@ -4,6 +4,10 @@ All notable changes to Telemetry Diet are documented here. The project follows [
 
 ## [Unreleased]
 
+### Security
+
+- Raised the minimum Node.js to 22.23.4, 24.22.1, or 26.12.1, the first releases that reject TLS chains through the compromised eMudhra intermediates; Node 23 and 25 are no longer accepted.
+
 ## [0.2.0] - 2026-08-17
 
 ### Added

@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/last9/telemetry-diet/actions/workflows/ci.yml/badge.svg)](https://github.com/last9/telemetry-diet/actions/workflows/ci.yml)
 [![npm version](https://img.shields.io/npm/v/telemetry-diet.svg)](https://www.npmjs.com/package/telemetry-diet)
-[![Node.js](https://img.shields.io/badge/Node.js-%3E%3D22.13-339933?logo=node.js&logoColor=white)](package.json)
+[![Node.js](https://img.shields.io/badge/Node.js-%5E22.23.4%20%7C%7C%20%5E24.22.1%20%7C%7C%20%3E%3D26.12.1-339933?logo=node.js&logoColor=white)](package.json)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
 
 > Find telemetry you can safely trim—locally, read-only, with drafts you review and apply.
@@ -23,11 +23,11 @@ Telemetry Diet is not a dashboard, hosted telemetry service, or automatic policy
 npx telemetry-diet
 ```
 
-The command starts a local app on `127.0.0.1` and opens the workbench. Datadog and Last9 authentication happens on the providers' own consent pages; OAuth tokens are held in the local process and are not exposed to the browser app. Node.js 22.13 or newer is required.
+The command starts a local app on `127.0.0.1` and opens the workbench. Datadog and Last9 authentication happens on the providers' own consent pages; OAuth tokens are held in the local process and are not exposed to the browser app. Node.js 22.23.4+ (22.x), Node.js 24.22.1+ (24.x), or Node.js 26.12.1+ is required; earlier releases accept TLS chains through the revoked eMudhra intermediates.
 
 ## Run locally from source
 
-Prerequisites: Git, Node.js 22.13 or newer, and npm.
+Prerequisites: Git, Node.js 22.23.4+ (22.x), Node.js 24.22.1+ (24.x), or Node.js 26.12.1+, and npm.
 
 ```bash
 git clone https://github.com/last9/telemetry-diet.git
