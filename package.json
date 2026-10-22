@@ -46,7 +46,7 @@
     "prepublishOnly": "npm run verify && npm run release:check"
   },
   "engines": {
-    "node": ">=22.13"
+    "node": "^22.23.4 || ^24.22.1 || >=26.12.1"
   },
   "keywords": [
     "mcp",

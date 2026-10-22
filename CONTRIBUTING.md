@@ -15,7 +15,7 @@ Telemetry Diet is a local, read-only observability optimization workbench. Contr
 
 Requirements:
 
-- Node.js 22.13 or newer
+- Node.js 22.23.4+ (22.x), Node.js 24.22.1+ (24.x), or Node.js 26.12.1+
 - npm
 
 ```bash
