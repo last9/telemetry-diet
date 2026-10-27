@@ -4,6 +4,10 @@ All notable changes to Telemetry Diet are documented here. The project follows [
 
 ## [Unreleased]
 
+### Fixed
+
+- Last9 log analysis now requests raw lines (`response_mode: "raw"`) from `get_service_logs` servers that summarize results over 20 lines by default, instead of failing with an unrecognized response.
+
 ### Security
 
 - Raised the minimum Node.js to 22.23.4, 24.22.1, or 26.12.1, the first releases that reject TLS chains through the compromised eMudhra intermediates; Node 23 and 25 are no longer accepted.

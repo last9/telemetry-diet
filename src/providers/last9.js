@@ -86,7 +86,8 @@ export class Last9Adapter {
       this.rulesTool ? this.client.callTool(this.rulesTool.name, toolArgs(this.rulesTool, values)) : null,
     ]);
     const existingPolicies = policiesFromLast9(rules);
-    const logs = await this.client.callTool(this.logsTool.name, toolArgs(this.logsTool, values));
+    // Servers that advertise response_mode summarize results over 20 lines by default and omit `logs`.
+    const logs = await this.client.callTool(this.logsTool.name, toolArgs(this.logsTool, { ...values, response_mode: 'raw' }));
     const normalized = normalizeLast9Logs(logs, context, { existingPolicies, limit: logsLimit.value });
     if (!normalized) throw new Error('Last9 MCP response did not contain a recognized log collection or normalized aggregate.');
     return normalized;
